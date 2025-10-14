@@ -3,6 +3,7 @@ import streamlit as st
 import numpy as np
 import os
 from io import BytesIO
+import requests
 
 @st.cache_data
 def load_file(file):
@@ -11,9 +12,24 @@ def load_file(file):
     else:
         return pd.read_csv(file)
 
+def load_threshold_from_github(province_key):
+    # Replace 'USERNAME/REPO' with your actual GitHub username and repository name
+    base_url = "https://raw.githubusercontent.com/USERNAME/REPO/main/"
+    threshold_url = f"{base_url}seasonal_thresholds_{province_key}.csv"
+    try:
+        response = requests.get(threshold_url)
+        response.raise_for_status()
+        df = pd.read_csv(BytesIO(response.content))
+        if df.empty:
+            raise ValueError("Downloaded file is empty.")
+        return df
+    except Exception as e:
+        st.error(f"Failed to load threshold from GitHub: {e}. Please check the URL and file availability.")
+        st.stop()
+
 # Streamlit app title
 st.title("Disease Outbreak Detection App for Provinces")
-st.write("Select province, upload weekly data, and generate alerts using province-specific thresholds.")
+st.write("Select province, upload weekly data, and generate alerts using province-specific thresholds from GitHub.")
 
 # Province selection
 provinces = ["AJK", "Balochistan", "Gilgit Baltistan", "Islamabad", "Sindh"]
@@ -21,73 +37,20 @@ selected_province = st.selectbox("Select Province:", provinces)
 
 # File naming convention (standardize to lowercase with _ for spaces)
 province_key = selected_province.lower().replace(" ", "_")
-threshold_filename = f'seasonal_thresholds_{province_key}.csv'  # Always save/load as CSV
 
-# Load or initialize threshold file for selected province
+# Load threshold file from GitHub for selected province
 threshold_df = None
 progress_bar = st.progress(0)
 status = st.empty()
 status.text('Initializing...')
 progress_bar.progress(10)
 
-if os.path.exists(threshold_filename):
-    try:
-        threshold_df = pd.read_csv(threshold_filename)
-        if threshold_df.empty:
-            raise pd.errors.EmptyDataError("Local file is empty.")
-        st.success(f"Threshold file loaded for {selected_province} from local '{threshold_filename}'.")
-        progress_bar.progress(30)
-    except (pd.errors.EmptyDataError, pd.errors.ParserError) as e:
-        st.warning(f"Local file '{threshold_filename}' is invalid/empty. Please re-upload.")
-        if os.path.exists(threshold_filename):
-            os.remove(threshold_filename)  # Clean up bad file
-        threshold_df = None
-else:
-    # Check for alternative filenames (e.g., capital letters or XLSX)
-    alt_filenames = [
-        f'seasonal_thresholds_{selected_province}.csv',  # Capital, no _
-        f'seasonal_thresholds_{selected_province}.xlsx',
-        f'seasonal_thresholds_{province_key}.xlsx',  # Lower + XLSX
-        f'seasonal_thresholds_Gilgit_Baltistan.csv' if selected_province == "Gilgit Baltistan" else None,
-        f'seasonal_thresholds_Islamabad.csv' if selected_province == "Islamabad" else None,
-        f'seasonal_thresholds_Balochistan.csv' if selected_province == "Balochistan" else None
-    ]
-    alt_filenames = [f for f in alt_filenames if f is not None]
-    loaded_from_alt = None
-    for alt_fn in alt_filenames:
-        if os.path.exists(alt_fn):
-            try:
-                if alt_fn.endswith('.xlsx'):
-                    temp_df = pd.read_excel(alt_fn)
-                else:
-                    temp_df = pd.read_csv(alt_fn)
-                if not temp_df.empty:
-                    threshold_df = temp_df
-                    loaded_from_alt = alt_fn
-                    # Convert and save as standard CSV
-                    threshold_df.to_csv(threshold_filename, index=False)
-                    st.success(f"Threshold loaded from '{alt_fn}' and standardized to '{threshold_filename}'.")
-                    progress_bar.progress(30)
-                    break
-            except Exception:
-                continue  # Try next alt
-    if threshold_df is None:
-        initial_threshold_file = st.file_uploader(f"Upload initial threshold file for {selected_province} (CSV or XLSX)", type=['csv', 'xlsx'])
-        if initial_threshold_file is not None:
-            try:
-                threshold_df = load_file(initial_threshold_file)
-                if threshold_df.empty:
-                    raise ValueError("Uploaded file is empty.")
-                # Save to local CSV
-                threshold_df.to_csv(threshold_filename, index=False)
-                st.success(f"Initial threshold file for {selected_province} saved as '{threshold_filename}'.")
-                progress_bar.progress(30)
-            except Exception as e:
-                st.error(f"Error loading threshold file: {e}")
-                st.stop()
-        else:
-            st.warning(f"No threshold file for {selected_province}. Please upload to proceed.")
-            st.stop()
+try:
+    threshold_df = load_threshold_from_github(province_key)
+    st.success(f"Threshold file loaded for {selected_province} from GitHub.")
+    progress_bar.progress(30)
+except:
+    pass  # Error handled in function
 
 # Upload new week file (weekly data)
 new_file = st.file_uploader("Upload new week data (CSV or Excel)", type=['xlsx', 'csv'])
@@ -277,7 +240,7 @@ if st.button("Generate Alerts"):
             st.warning("No alerts generated.")
 
     else:
-        st.warning("Upload threshold and weekly data to generate alerts.")
+        st.warning("Upload weekly data to generate alerts.")
 
     progress_bar.empty()
     status.empty()
@@ -285,8 +248,7 @@ if st.button("Generate Alerts"):
 # Instructions
 st.sidebar.title("Instructions")
 st.sidebar.write("1. Select province.")
-st.sidebar.write("2. Upload initial threshold CSV/XLSX for the province (saved as CSV locally).")
-st.sidebar.write("3. Upload weekly data (CSV/Excel).")
-st.sidebar.write("4. Adjust filters and click 'Generate Alerts'.")
-st.sidebar.write("5. View and download results.")
-st.sidebar.write("Note: Handles Other exclusion, year-round remapping, and priority inclusion.")
+st.sidebar.write("2. Upload weekly data (CSV/Excel).")
+st.sidebar.write("3. Adjust filters and click 'Generate Alerts'.")
+st.sidebar.write("4. View and download results.")
+st.sidebar.write("Note: Thresholds are automatically loaded from GitHub. Handles Other exclusion, year-round remapping, and priority inclusion.")
