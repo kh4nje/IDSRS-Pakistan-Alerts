@@ -215,18 +215,15 @@ if st.button("Generate Alerts"):
         if not final_alerts.empty:
             st.dataframe(final_alerts)
 
-            # Download
+            # Download as CSV to avoid openpyxl dependency
             status.text('Preparing download...')
             progress_bar.progress(100)
-            output = BytesIO()
-            with pd.ExcelWriter(output, engine='openpyxl') as writer:
-                final_alerts.to_excel(writer, index=False, sheet_name='Alerts')
-            output.seek(0)
+            csv = final_alerts.to_csv(index=False).encode('utf-8')
             st.download_button(
-                label=f"Download Alerts for AJK Week {new_week}",
-                data=output,
-                file_name=f'alerts_ajk_week_{new_week}.xlsx',
-                mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+                label=f"Download Alerts for AJK Week {new_week} (CSV)",
+                data=csv,
+                file_name=f'alerts_ajk_week_{new_week}.csv',
+                mime='text/csv'
             )
         else:
             st.warning("No alerts generated.")
@@ -242,5 +239,5 @@ st.sidebar.title("Instructions")
 st.sidebar.write("1. Ensure AJK.csv is in the same folder as app.py.")
 st.sidebar.write("2. Upload weekly data (CSV/Excel).")
 st.sidebar.write("3. Adjust filters and click 'Generate Alerts'.")
-st.sidebar.write("4. View and download results.")
-st.sidebar.write("Note: Handles Other exclusion, year-round remapping, and priority inclusion.")
+st.sidebar.write("4. View and download results (CSV).")
+st.sidebar.write("Note: Handles Other exclusion, year-round remapping, and priority inclusion. Download is CSV to avoid Excel dependency issues.")
