@@ -13,7 +13,7 @@ provinces = ["AJK", "Balochistan", "Gilgit Baltistan", "Islamabad", "Sindh"]
 selected_province = st.selectbox("Select Province:", provinces)
 
 # File naming convention
-threshold_filename = f'seasonal_thresholds_{selected_province.lower().replace(" ", "_")}.csv'
+threshold_filename = f'seasonal_thresholds_{selected_province.lower().replace(" ", "_")}.csv'  # Keep as CSV for local save, but upload can be XLSX
 
 # Load or initialize threshold file for selected province
 threshold_df = None
@@ -21,12 +21,19 @@ if os.path.exists(threshold_filename):
     threshold_df = pd.read_csv(threshold_filename)
     st.success(f"Threshold file loaded for {selected_province} from local '{threshold_filename}'.")
 else:
-    initial_threshold_file = st.file_uploader(f"Upload initial threshold file for {selected_province} (seasonal_thresholds.csv)", type=['csv'])
+    initial_threshold_file = st.file_uploader(f"Upload initial threshold file for {selected_province} (CSV or XLSX)", type=['csv', 'xlsx'])
     if initial_threshold_file is not None:
-        threshold_df = pd.read_csv(initial_threshold_file)
-        # Save to local file
-        threshold_df.to_csv(threshold_filename, index=False)
-        st.success(f"Initial threshold file for {selected_province} saved as '{threshold_filename}'.")
+        try:
+            if initial_threshold_file.name.endswith('.xlsx'):
+                threshold_df = pd.read_excel(initial_threshold_file)
+            else:
+                threshold_df = pd.read_csv(initial_threshold_file)
+            # Save to local CSV (for consistency)
+            threshold_df.to_csv(threshold_filename, index=False)
+            st.success(f"Initial threshold file for {selected_province} (converted to CSV) saved as '{threshold_filename}'.")
+        except Exception as e:
+            st.error(f"Error loading threshold file: {e}")
+            st.stop()
     else:
         st.warning(f"No threshold file for {selected_province}. Please upload to proceed.")
         st.stop()
@@ -213,7 +220,7 @@ if st.button("Generate Alerts"):
 # Instructions
 st.sidebar.title("Instructions")
 st.sidebar.write("1. Select province.")
-st.sidebar.write("2. Upload initial threshold CSV for the province (saved locally).")
+st.sidebar.write("2. Upload initial threshold CSV/XLSX for the province (saved as CSV locally).")
 st.sidebar.write("3. Upload weekly data (CSV/Excel).")
 st.sidebar.write("4. Adjust filters and click 'Generate Alerts'.")
 st.sidebar.write("5. View and download results.")
