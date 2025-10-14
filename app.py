@@ -11,8 +11,8 @@ def load_file(file):
     else:
         return pd.read_csv(file)
 
-def load_threshold_local(province_key):
-    threshold_filename = f'seasonal_thresholds_{province_key}.csv'
+def load_threshold_local():
+    threshold_filename = 'AJK.csv'
     try:
         if os.path.exists(threshold_filename):
             df = pd.read_csv(threshold_filename)
@@ -26,26 +26,19 @@ def load_threshold_local(province_key):
         st.stop()
 
 # Streamlit app title
-st.title("Disease Outbreak Detection App for Provinces")
-st.write("Select province, upload weekly data, and generate alerts using province-specific thresholds from local files.")
+st.title("Disease Outbreak Detection App for AJK")
+st.write("Upload weekly data and generate alerts using AJK-specific thresholds from local file.")
 
-# Province selection
-provinces = ["AJK", "Balochistan", "Gilgit Baltistan", "Islamabad", "Sindh"]
-selected_province = st.selectbox("Select Province:", provinces)
-
-# File naming convention (standardize to lowercase with _ for spaces)
-province_key = selected_province.lower().replace(" ", "_")
-
-# Load threshold file from local for selected province
+# Load threshold file from local for AJK
 threshold_df = None
 progress_bar = st.progress(0)
 status = st.empty()
 status.text('Initializing...')
 progress_bar.progress(10)
 
-threshold_df = load_threshold_local(province_key)
+threshold_df = load_threshold_local()
 st.write("Threshold columns:", threshold_df.columns.tolist())
-st.success(f"Threshold file loaded for {selected_province} from local '{f'seasonal_thresholds_{province_key}.csv'}'.")
+st.success(f"Threshold file loaded for AJK from local 'AJK.csv'.")
 progress_bar.progress(30)
 
 # Upload new week file (weekly data)
@@ -217,7 +210,7 @@ if st.button("Generate Alerts"):
         final_alerts = pd.concat([priority_alerts, filtered_non_priority], ignore_index=True)
         final_alerts = final_alerts.sort_values('Deviation', ascending=False)
 
-        st.write(f"Total alerts for {selected_province}: {len(final_alerts)} ({len(priority_alerts)} priority + {len(filtered_non_priority)} filtered)")
+        st.write(f"Total alerts for AJK: {len(final_alerts)} ({len(priority_alerts)} priority + {len(filtered_non_priority)} filtered)")
 
         if not final_alerts.empty:
             st.dataframe(final_alerts)
@@ -230,9 +223,9 @@ if st.button("Generate Alerts"):
                 final_alerts.to_excel(writer, index=False, sheet_name='Alerts')
             output.seek(0)
             st.download_button(
-                label=f"Download Alerts for {selected_province} Week {new_week}",
+                label=f"Download Alerts for AJK Week {new_week}",
                 data=output,
-                file_name=f'alerts_{province_key}_week_{new_week}.xlsx',
+                file_name=f'alerts_ajk_week_{new_week}.xlsx',
                 mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
             )
         else:
@@ -246,9 +239,8 @@ if st.button("Generate Alerts"):
 
 # Instructions
 st.sidebar.title("Instructions")
-st.sidebar.write("1. Select province.")
-st.sidebar.write("2. Ensure threshold CSV is in the same folder as app.py.")
-st.sidebar.write("3. Upload weekly data (CSV/Excel).")
-st.sidebar.write("4. Adjust filters and click 'Generate Alerts'.")
-st.sidebar.write("5. View and download results.")
-st.sidebar.write("Note: Thresholds are loaded from local files. Handles Other exclusion, year-round remapping, and priority inclusion.")
+st.sidebar.write("1. Ensure AJK.csv is in the same folder as app.py.")
+st.sidebar.write("2. Upload weekly data (CSV/Excel).")
+st.sidebar.write("3. Adjust filters and click 'Generate Alerts'.")
+st.sidebar.write("4. View and download results.")
+st.sidebar.write("Note: Handles Other exclusion, year-round remapping, and priority inclusion.")
