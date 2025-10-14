@@ -44,6 +44,7 @@ status.text('Initializing...')
 progress_bar.progress(10)
 
 threshold_df = load_threshold_local(province_key)
+st.write("Threshold columns:", threshold_df.columns.tolist())
 st.success(f"Threshold file loaded for {selected_province} from local '{f'seasonal_thresholds_{province_key}.csv'}'.")
 progress_bar.progress(30)
 
@@ -178,6 +179,9 @@ if st.button("Generate Alerts"):
 
         # Filter thresholds for speed
         current_season = new_df['Season'].iloc[0]
+        if 'Season' not in threshold_df.columns:
+            st.error("Threshold file does not have 'Season' column. Please check the file structure.")
+            st.stop()
         filtered_thresholds = threshold_df[threshold_df['Season'].isin([current_season, 'Year-Round'])]
         alerts = long_new.merge(filtered_thresholds[['Facility_ID', 'Disease', 'Season', 'Threshold_95', 'Threshold_99', 'Mean', 'SD']], how='left')
 
