@@ -4,6 +4,13 @@ import numpy as np
 import os
 from io import BytesIO
 
+@st.cache_data
+def load_file(file):
+    if file.name.endswith('.xlsx'):
+        return pd.read_excel(file)
+    else:
+        return pd.read_csv(file)
+
 # Streamlit app title
 st.title("Disease Outbreak Detection App for Provinces")
 st.write("Select province, upload weekly data, and generate alerts using province-specific thresholds.")
@@ -12,36 +19,79 @@ st.write("Select province, upload weekly data, and generate alerts using provinc
 provinces = ["AJK", "Balochistan", "Gilgit Baltistan", "Islamabad", "Sindh"]
 selected_province = st.selectbox("Select Province:", provinces)
 
-# File naming convention
-threshold_filename = f'seasonal_thresholds_{selected_province.lower().replace(" ", "_")}.csv'  # Keep as CSV for local save, but upload can be XLSX
+# File naming convention (standardize to lowercase with _ for spaces)
+province_key = selected_province.lower().replace(" ", "_")
+threshold_filename = f'seasonal_thresholds_{province_key}.csv'  # Always save/load as CSV
 
 # Load or initialize threshold file for selected province
 threshold_df = None
+progress_bar = st.progress(0)
+status = st.empty()
+status.text('Initializing...')
+progress_bar.progress(10)
+
 if os.path.exists(threshold_filename):
-    threshold_df = pd.read_csv(threshold_filename)
-    st.success(f"Threshold file loaded for {selected_province} from local '{threshold_filename}'.")
+    try:
+        threshold_df = pd.read_csv(threshold_filename)
+        if threshold_df.empty:
+            raise pd.errors.EmptyDataError("Local file is empty.")
+        st.success(f"Threshold file loaded for {selected_province} from local '{threshold_filename}'.")
+        progress_bar.progress(30)
+    except (pd.errors.EmptyDataError, pd.errors.ParserError) as e:
+        st.warning(f"Local file '{threshold_filename}' is invalid/empty. Please re-upload.")
+        os.remove(threshold_filename)  # Clean up bad file
+        threshold_df = None
 else:
-    initial_threshold_file = st.file_uploader(f"Upload initial threshold file for {selected_province} (CSV or XLSX)", type=['csv', 'xlsx'])
-    if initial_threshold_file is not None:
-        try:
-            if initial_threshold_file.name.endswith('.xlsx'):
-                threshold_df = pd.read_excel(initial_threshold_file)
-            else:
-                threshold_df = pd.read_csv(initial_threshold_file)
-            # Save to local CSV (for consistency)
-            threshold_df.to_csv(threshold_filename, index=False)
-            st.success(f"Initial threshold file for {selected_province} (converted to CSV) saved as '{threshold_filename}'.")
-        except Exception as e:
-            st.error(f"Error loading threshold file: {e}")
+    # Check for alternative filenames (e.g., capital letters or XLSX)
+    alt_filenames = [
+        f'seasonal_thresholds_{selected_province}.csv',  # Capital, no _
+        f'seasonal_thresholds_{selected_province}.xlsx',
+        f'seasonal_thresholds_{province_key}.xlsx',  # Lower + XLSX
+        f'seasonal_thresholds_Gilgit_Baltistan.csv' if selected_province == "Gilgit Baltistan" else None,
+        f'seasonal_thresholds_Islamabad.csv' if selected_province == "Islamabad" else None,
+        f'seasonal_thresholds_Balochistan.csv' if selected_province == "Balochistan" else None
+    ]
+    alt_filenames = [f for f in alt_filenames if f is not None]
+    loaded_from_alt = None
+    for alt_fn in alt_filenames:
+        if os.path.exists(alt_fn):
+            try:
+                if alt_fn.endswith('.xlsx'):
+                    temp_df = pd.read_excel(alt_fn)
+                else:
+                    temp_df = pd.read_csv(alt_fn)
+                if not temp_df.empty:
+                    threshold_df = temp_df
+                    loaded_from_alt = alt_fn
+                    # Convert and save as standard CSV
+                    threshold_df.to_csv(threshold_filename, index=False)
+                    st.success(f"Threshold loaded from '{alt_fn}' and standardized to '{threshold_filename}'.")
+                    progress_bar.progress(30)
+                    break
+            except Exception:
+                continue  # Try next alt
+    if threshold_df is None:
+        initial_threshold_file = st.file_uploader(f"Upload initial threshold file for {selected_province} (CSV or XLSX)", type=['csv', 'xlsx'])
+        if initial_threshold_file is not None:
+            try:
+                threshold_df = load_file(initial_threshold_file)
+                if threshold_df.empty:
+                    raise ValueError("Uploaded file is empty.")
+                # Save to local CSV
+                threshold_df.to_csv(threshold_filename, index=False)
+                st.success(f"Initial threshold file for {selected_province} saved as '{threshold_filename}'.")
+                progress_bar.progress(30)
+            except Exception as e:
+                st.error(f"Error loading threshold file: {e}")
+                st.stop()
+        else:
+            st.warning(f"No threshold file for {selected_province}. Please upload to proceed.")
             st.stop()
-    else:
-        st.warning(f"No threshold file for {selected_province}. Please upload to proceed.")
-        st.stop()
 
 # Upload new week file (weekly data)
 new_file = st.file_uploader("Upload new week data (CSV or Excel)", type=['xlsx', 'csv'])
 
-# Priority diseases (common across)
+# Priority diseases
 priority_diseases = [
     "Crimean Congo Hemorrhagic Fever (New Cases)",
     "Anthrax (New Cases)",
@@ -50,8 +100,6 @@ priority_diseases = [
     "Neonatal Tetanus (New Cases)",
     "Acute Flaccid Paralysis (New Cases)"
 ]
-
-# Selected priorities
 selected_priority_diseases = st.multiselect(
     "Select priority diseases to always include:",
     options=priority_diseases,
@@ -61,22 +109,16 @@ selected_priority_diseases = st.multiselect(
 # Run button
 if st.button("Generate Alerts"):
     if threshold_df is not None and new_file is not None:
-        # Load new week data
-        try:
-            if new_file.name.endswith('.xlsx'):
-                new_df = pd.read_excel(new_file)
-            else:
-                new_df = pd.read_csv(new_file)
-            st.write("New week data loaded. Shape:", new_df.shape)
-        except Exception as e:
-            st.error(f"Error loading new week data: {e}")
-            st.stop()
+        status.text('Loading new week data...')
+        progress_bar.progress(40)
+        new_df = load_file(new_file)
+        st.write("New week data loaded. Shape:", new_df.shape)
 
         # Remove unnecessary columns
         columns_to_remove = ['periodid', 'periodcode', 'perioddescription', 'organisationunitid', 'organisationunitcode', 'organisationunitdescription']
         new_df = new_df.drop(columns=[col for col in columns_to_remove if col in new_df.columns])
 
-        # Fill NaNs in org levels and create Facility_ID (up to level5)
+        # Org levels and Facility_ID
         org_cols = ['orgunitlevel1', 'orgunitlevel2', 'orgunitlevel3', 'orgunitlevel4', 'orgunitlevel5', 'organisationunitname']
         for col in org_cols:
             if col in new_df.columns:
@@ -87,38 +129,34 @@ if st.button("Generate Alerts"):
                                      new_df['orgunitlevel5'] + '_' + new_df['organisationunitname'])
             st.write(f"Unique Facility_IDs: {new_df['Facility_ID'].nunique()}")
         else:
-            st.error("Missing required org columns for Facility_ID.")
+            st.error("Missing required org columns.")
             st.stop()
 
-        # Parse periodname to Year and Week (robust patterns)
+        status.text('Parsing week and season...')
+        progress_bar.progress(50)
+        # Parse periodname
         if 'periodname' in new_df.columns:
             new_df['periodname'] = new_df['periodname'].astype(str).str.strip()
             patterns = [
-                r'(\d{4})W(\d{1,2})',  # "2023W1"
-                r'Week (\d+) (\d{4})-\d{2}-\d{2} - \d{4}-\d{2}-\d{2}',  # KP-like
+                r'(\d{4})W(\d{1,2})',
+                r'Week (\d+) (\d{4})-\d{2}-\d{2} - \d{4}-\d{2}-\d{2}',
             ]
-            best_success = 0
             best_extracted = None
-            for i, pat in enumerate(patterns):
+            for pat in patterns:
                 extracted = new_df['periodname'].str.extract(pat)
                 if extracted.shape[1] == 2:
                     if 'Week' in pat:
                         extracted.columns = ['Week', 'Year']
                     else:
                         extracted.columns = ['Year', 'Week']
-                    success = extracted.notna().all(axis=1).sum()
-                    st.write(f"Pattern {i+1} success: {success}/{len(new_df)}")
-                    if success > best_success:
-                        best_success = success
+                    if extracted.notna().all(axis=1).sum() > 0:
                         best_extracted = extracted
+                        break
             if best_extracted is not None:
                 new_df = pd.concat([new_df, best_extracted], axis=1)
                 new_df['Year'] = pd.to_numeric(new_df['Year'], errors='coerce')
                 new_df['Week'] = pd.to_numeric(new_df['Week'], errors='coerce')
                 new_df = new_df.dropna(subset=['Year', 'Week'])
-                if new_df.empty:
-                    st.error("No valid weeks parsed.")
-                    st.stop()
                 new_week = new_df['Week'].iloc[0]
                 st.write(f"Parsed Week: {new_week}")
             else:
@@ -128,7 +166,7 @@ if st.button("Generate Alerts"):
             st.error("No 'periodname' column.")
             st.stop()
 
-        # Assign season
+        # Season
         def assign_season(week):
             if pd.isna(week):
                 return 'Unknown'
@@ -145,13 +183,15 @@ if st.button("Generate Alerts"):
         new_df['Season'] = new_df['Week'].apply(assign_season)
         st.write(f"Season: {new_df['Season'].iloc[0]}")
 
-        # Identify disease columns and melt
+        status.text('Melting and merging data...')
+        progress_bar.progress(70)
+        # Disease columns and melt
         disease_cols = [col for col in new_df.columns if '(New Cases)' in col or '(New cases)' in col]
         if len(disease_cols) == 0:
             st.error("No disease columns found.")
             st.stop()
         new_df[disease_cols] = new_df[disease_cols].fillna(0).astype(int)
-        long_new = pd.melt(new_df, id_vars=['Facility_ID', 'Season'], value_vars=disease_cols, var_name='Disease', value_name='Cases')
+        long_new = pd.melt(new_df, id_vars=['Facility_ID', 'Season'], value_vars=disease_cols, var_name='Disease', value_name='Cases', low_memory=False)
         long_new['Cases'] = long_new['Cases'].astype(int)
         st.write("Melted data shape:", long_new.shape)
 
@@ -162,10 +202,12 @@ if st.button("Generate Alerts"):
             'Syphilis (New Cases)', 'Visceral Leishmaniasis (New Cases)', 'Neonatal Tetanus (New Cases)'
         ]
         long_new.loc[long_new['Disease'].isin(year_round_diseases), 'Season'] = 'Year-Round'
-        st.write(f"Overrode {len([d for d in year_round_diseases if d in long_new['Disease'].unique()])} year-round diseases.")
 
-        # Merge with thresholds
-        alerts = long_new.merge(threshold_df, on=['Facility_ID', 'Disease', 'Season'], how='left')
+        # Filter thresholds for speed
+        current_season = new_df['Season'].iloc[0]
+        filtered_thresholds = threshold_df[threshold_df['Season'].isin([current_season, 'Year-Round'])]
+        alerts = long_new.merge(filtered_thresholds[['Facility_ID', 'Disease', 'Season', 'Threshold_95', 'Threshold_99', 'Mean', 'SD']], how='left')
+
         alerts['Alert_Level'] = np.where(
             (alerts['Cases'] > alerts['Threshold_99']) & alerts['Threshold_99'].notna(), 'High Alert',
             np.where(
@@ -177,14 +219,16 @@ if st.button("Generate Alerts"):
             np.where(alerts['Alert_Level'] == 'Alert', alerts['Cases'] - alerts['Threshold_95'], 0)
         )
 
-        # Filter alerts (exclude Other, min deviation=1)
+        # Filter alerts
         alerts = alerts[(alerts['Alert_Level'] != 'Normal') & 
                         alerts['Threshold_95'].notna() & 
                         (alerts['Deviation'] >= 1) &
                         (~alerts['Disease'].str.contains('Other'))].copy()
         alerts = alerts[['Facility_ID', 'Disease', 'Season', 'Cases', 'Mean', 'SD', 'Threshold_95', 'Threshold_99', 'Alert_Level', 'Deviation']]
 
-        # Priority filtering (always include priorities)
+        status.text('Filtering alerts...')
+        progress_bar.progress(90)
+        # Priority filtering
         priority_alerts = alerts[alerts['Disease'].isin(selected_priority_diseases)]
         non_priority_alerts = alerts[~alerts['Disease'].isin(selected_priority_diseases)]
         col1, col2 = st.columns(2)
@@ -202,6 +246,8 @@ if st.button("Generate Alerts"):
             st.dataframe(final_alerts)
 
             # Download
+            status.text('Preparing download...')
+            progress_bar.progress(100)
             output = BytesIO()
             with pd.ExcelWriter(output, engine='openpyxl') as writer:
                 final_alerts.to_excel(writer, index=False, sheet_name='Alerts')
@@ -209,13 +255,14 @@ if st.button("Generate Alerts"):
             st.download_button(
                 label=f"Download Alerts for {selected_province} Week {new_week}",
                 data=output,
-                file_name=f'alerts_{selected_province.lower().replace(" ", "_")}_week_{new_week}.xlsx',
+                file_name=f'alerts_{province_key}_week_{new_week}.xlsx',
                 mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
             )
         else:
             st.warning("No alerts generated.")
-    else:
-        st.warning("Upload threshold and weekly data to generate alerts.")
+
+    progress_bar.empty()
+    status.empty()
 
 # Instructions
 st.sidebar.title("Instructions")
