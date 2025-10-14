@@ -23,8 +23,8 @@ def load_threshold_from_github(province_key):
             raise ValueError("Downloaded file is empty.")
         return df
     except Exception as e:
-        st.error(f"Failed to load threshold from GitHub: {e}. Please check the URL and file availability.")
-        st.stop()
+        st.warning(f"Failed to load threshold from GitHub: {e}. Falling back to manual upload.")
+        return None
 
 # Streamlit app title
 st.title("Disease Outbreak Detection App for Provinces")
@@ -44,12 +44,26 @@ status = st.empty()
 status.text('Initializing...')
 progress_bar.progress(10)
 
-try:
-    threshold_df = load_threshold_from_github(province_key)
+threshold_df = load_threshold_from_github(province_key)
+if threshold_df is not None:
     st.success(f"Threshold file loaded for {selected_province} from GitHub.")
     progress_bar.progress(30)
-except:
-    pass  # Error handled in function
+else:
+    # Fallback to upload
+    initial_threshold_file = st.file_uploader(f"Upload threshold file for {selected_province} (CSV or XLSX)", type=['csv', 'xlsx'])
+    if initial_threshold_file is not None:
+        try:
+            threshold_df = load_file(initial_threshold_file)
+            if threshold_df.empty:
+                raise ValueError("Uploaded file is empty.")
+            st.success(f"Threshold file for {selected_province} uploaded successfully.")
+            progress_bar.progress(30)
+        except Exception as e:
+            st.error(f"Error loading threshold file: {e}")
+            st.stop()
+    else:
+        st.warning(f"No threshold file available for {selected_provice}. Please upload to proceed.")
+        st.stop()
 
 # Upload new week file (weekly data)
 new_file = st.file_uploader("Upload new week data (CSV or Excel)", type=['xlsx', 'csv'])
@@ -247,7 +261,8 @@ if st.button("Generate Alerts"):
 # Instructions
 st.sidebar.title("Instructions")
 st.sidebar.write("1. Select province.")
-st.sidebar.write("2. Upload weekly data (CSV/Excel).")
-st.sidebar.write("3. Adjust filters and click 'Generate Alerts'.")
-st.sidebar.write("4. View and download results.")
-st.sidebar.write("Note: Thresholds are automatically loaded from GitHub. Handles Other exclusion, year-round remapping, and priority inclusion.")
+st.sidebar.write("2. If GitHub thresholds fail, upload threshold file (CSV/Excel).")
+st.sidebar.write("3. Upload weekly data (CSV/Excel).")
+st.sidebar.write("4. Adjust filters and click 'Generate Alerts'.")
+st.sidebar.write("5. View and download results.")
+st.sidebar.write("Note: Thresholds are loaded from GitHub; fallback to upload if unavailable. Handles Other exclusion, year-round remapping, and priority inclusion.")
