@@ -262,7 +262,7 @@ def load_threshold_local(province):
         "Balochistan": "Balochistan.csv",
         "Gilgit Baltistan": "GB.csv",
         "Islamabad": "ICT.csv",
-        "Sindh": "Sindh.csv"
+        "Sindh": "Sindh.xlsx"
     }
     threshold_filename = province_files.get(province)
     if threshold_filename is None:
@@ -270,7 +270,10 @@ def load_threshold_local(province):
         st.stop()
     try:
         if os.path.exists(threshold_filename):
-            df = pd.read_csv(threshold_filename)
+            if threshold_filename.endswith('.xlsx'):
+                df = pd.read_excel(threshold_filename)
+            else:
+                df = pd.read_csv(threshold_filename)
             if df.empty:
                 raise ValueError("Local file is empty.")
             return df
@@ -499,7 +502,7 @@ if st.button("Generate Alerts"):
 # Instructions
 st.sidebar.title("Instructions")
 st.sidebar.write("1. Select province.")
-st.sidebar.write("2. Ensure the corresponding threshold CSV is in the same folder as app.py (e.g., AJK.csv for AJK, ICT.csv for Islamabad).")
+st.sidebar.write("2. Ensure the corresponding threshold file is in the same folder as app.py (e.g., AJK.csv for AJK, ICT.csv for Islamabad, Sindh.xlsx for Sindh).")
 st.sidebar.write("3. Upload weekly data (CSV/Excel).")
 st.sidebar.write("4. Adjust filters and click 'Generate Alerts'.")
 st.sidebar.write("5. View and download results (CSV).")
