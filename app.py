@@ -164,7 +164,7 @@ if st.button("Generate Alerts"):
         if new_df.empty:
             st.error("DataFrame is empty after parsing—cannot melt.")
             st.stop()
-        long_new = pd.melt(new_df, id_vars=['Facility_ID', 'Season'], value_vars=disease_cols, var_name='Disease', value_name='Cases', low_memory=False)
+        long_new = pd.melt(new_df, id_vars=['Facility_ID', 'Season'], value_vars=disease_cols, var_name='Disease', value_name='Cases')
         long_new['Cases'] = long_new['Cases'].astype(int)
         st.write("Melted data shape:", long_new.shape)
 
