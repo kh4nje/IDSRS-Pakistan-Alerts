@@ -192,7 +192,6 @@ if st.button("Generate Alerts"):
         # Filter alerts
         alerts = alerts[(alerts['Alert_Level'] != 'Normal') & 
                         alerts['Threshold_95'].notna() & 
-                        (alerts['Deviation'] >= 0) &
                         (~alerts['Disease'].str.contains('Other', na=False))].copy()
         alerts = alerts[['Facility_ID', 'Disease', 'Season', 'Cases', 'Mean', 'SD', 'Threshold_95', 'Threshold_99', 'Alert_Level', 'Deviation']]
 
@@ -205,7 +204,7 @@ if st.button("Generate Alerts"):
         with col1:
             top_n = st.slider("Top N Non-Priority Alerts", min_value=0, max_value=len(non_priority_alerts), value=min(50, len(non_priority_alerts)))
         with col2:
-            min_dev = st.slider("Min Deviation for Non-Priority", min_value=1.0, max_value=non_priority_alerts['Deviation'].max() if len(non_priority_alerts) > 0 else 10.0, value=1.0)
+            min_dev = st.slider("Min Deviation for Non-Priority", min_value=0.0, max_value=non_priority_alerts['Deviation'].max() if len(non_priority_alerts) > 0 else 10.0, value=0.0)
         filtered_non_priority = non_priority_alerts[(non_priority_alerts['Deviation'] >= min_dev)].head(top_n)
         final_alerts = pd.concat([priority_alerts, filtered_non_priority], ignore_index=True)
         final_alerts = final_alerts.sort_values('Deviation', ascending=False)
@@ -241,4 +240,3 @@ st.sidebar.write("2. Upload weekly data (CSV/Excel).")
 st.sidebar.write("3. Adjust filters and click 'Generate Alerts'.")
 st.sidebar.write("4. View and download results (CSV).")
 st.sidebar.write("Note: Handles Other exclusion, year-round remapping, and priority inclusion. Download is CSV to avoid Excel dependency issues.")
-
