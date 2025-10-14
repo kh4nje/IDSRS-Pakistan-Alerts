@@ -3,7 +3,6 @@ import streamlit as st
 import numpy as np
 import os
 from io import BytesIO
-import requests
 
 @st.cache_data
 def load_file(file):
@@ -12,23 +11,23 @@ def load_file(file):
     else:
         return pd.read_csv(file)
 
-def load_threshold_from_github(province_key):
-    base_url = "https://raw.githubusercontent.com/kh4nje/IDSRS-Pakistan-Alerts/main/"
-    threshold_url = f"{base_url}seasonal_thresholds_{province_key}.csv"
+def load_threshold_local(province_key):
+    threshold_filename = f'seasonal_thresholds_{province_key}.csv'
     try:
-        response = requests.get(threshold_url)
-        response.raise_for_status()
-        df = pd.read_csv(BytesIO(response.content))
-        if df.empty:
-            raise ValueError("Downloaded file is empty.")
-        return df
+        if os.path.exists(threshold_filename):
+            df = pd.read_csv(threshold_filename)
+            if df.empty:
+                raise ValueError("Local file is empty.")
+            return df
+        else:
+            raise FileNotFoundError(f"Local file '{threshold_filename}' not found.")
     except Exception as e:
-        st.warning(f"Failed to load threshold from GitHub: {e}. Falling back to manual upload.")
-        return None
+        st.error(f"Failed to load local threshold file: {e}. Please ensure the file exists in the same folder as app.py.")
+        st.stop()
 
 # Streamlit app title
 st.title("Disease Outbreak Detection App for Provinces")
-st.write("Select province, upload weekly data, and generate alerts using province-specific thresholds from GitHub.")
+st.write("Select province, upload weekly data, and generate alerts using province-specific thresholds from local files.")
 
 # Province selection
 provinces = ["AJK", "Balochistan", "Gilgit Baltistan", "Islamabad", "Sindh"]
@@ -37,33 +36,16 @@ selected_province = st.selectbox("Select Province:", provinces)
 # File naming convention (standardize to lowercase with _ for spaces)
 province_key = selected_province.lower().replace(" ", "_")
 
-# Load threshold file from GitHub for selected province
+# Load threshold file from local for selected province
 threshold_df = None
 progress_bar = st.progress(0)
 status = st.empty()
 status.text('Initializing...')
 progress_bar.progress(10)
 
-threshold_df = load_threshold_from_github(province_key)
-if threshold_df is not None:
-    st.success(f"Threshold file loaded for {selected_province} from GitHub.")
-    progress_bar.progress(30)
-else:
-    # Fallback to upload
-    initial_threshold_file = st.file_uploader(f"Upload threshold file for {selected_province} (CSV or XLSX)", type=['csv', 'xlsx'])
-    if initial_threshold_file is not None:
-        try:
-            threshold_df = load_file(initial_threshold_file)
-            if threshold_df.empty:
-                raise ValueError("Uploaded file is empty.")
-            st.success(f"Threshold file for {selected_province} uploaded successfully.")
-            progress_bar.progress(30)
-        except Exception as e:
-            st.error(f"Error loading threshold file: {e}")
-            st.stop()
-    else:
-        st.warning(f"No threshold file available for {selected_provice}. Please upload to proceed.")
-        st.stop()
+threshold_df = load_threshold_local(province_key)
+st.success(f"Threshold file loaded for {selected_province} from local '{f'seasonal_thresholds_{province_key}.csv'}'.")
+progress_bar.progress(30)
 
 # Upload new week file (weekly data)
 new_file = st.file_uploader("Upload new week data (CSV or Excel)", type=['xlsx', 'csv'])
@@ -261,8 +243,8 @@ if st.button("Generate Alerts"):
 # Instructions
 st.sidebar.title("Instructions")
 st.sidebar.write("1. Select province.")
-st.sidebar.write("2. If GitHub thresholds fail, upload threshold file (CSV/Excel).")
+st.sidebar.write("2. Ensure threshold CSV is in the same folder as app.py.")
 st.sidebar.write("3. Upload weekly data (CSV/Excel).")
 st.sidebar.write("4. Adjust filters and click 'Generate Alerts'.")
 st.sidebar.write("5. View and download results.")
-st.sidebar.write("Note: Thresholds are loaded from GitHub; fallback to upload if unavailable. Handles Other exclusion, year-round remapping, and priority inclusion.")
+st.sidebar.write("Note: Thresholds are loaded from local files. Handles Other exclusion, year-round remapping, and priority inclusion.")
