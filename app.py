@@ -192,7 +192,7 @@ if st.button("Generate Alerts"):
         # Filter alerts
         alerts = alerts[(alerts['Alert_Level'] != 'Normal') & 
                         alerts['Threshold_95'].notna() & 
-                        (alerts['Deviation'] >= 1) &
+                        (alerts['Deviation'] >= 0) &
                         (~alerts['Disease'].str.contains('Other', na=False))].copy()
         alerts = alerts[['Facility_ID', 'Disease', 'Season', 'Cases', 'Mean', 'SD', 'Threshold_95', 'Threshold_99', 'Alert_Level', 'Deviation']]
 
@@ -241,3 +241,4 @@ st.sidebar.write("2. Upload weekly data (CSV/Excel).")
 st.sidebar.write("3. Adjust filters and click 'Generate Alerts'.")
 st.sidebar.write("4. View and download results (CSV).")
 st.sidebar.write("Note: Handles Other exclusion, year-round remapping, and priority inclusion. Download is CSV to avoid Excel dependency issues.")
+
