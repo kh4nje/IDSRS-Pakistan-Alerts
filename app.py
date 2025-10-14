@@ -538,7 +538,8 @@ def load_threshold_local(province):
     try:
         if os.path.exists(threshold_filename):
             if threshold_filename.endswith('.xlsx'):
-                df = pd.read_excel(threshold_filename)
+                # Explicitly specify engine for XLSX to ensure openpyxl is used
+                df = pd.read_excel(threshold_filename, engine='openpyxl')
             else:
                 df = pd.read_csv(threshold_filename)
             if df.empty:
@@ -546,8 +547,14 @@ def load_threshold_local(province):
             return df
         else:
             raise FileNotFoundError(f"Local file '{threshold_filename}' not found.")
+    except ImportError as e:
+        st.error(f"Missing dependency for XLSX loading (e.g., openpyxl). Install via 'pip install openpyxl' or check requirements.txt: {e}")
+        st.stop()
     except Exception as e:
         st.error(f"Failed to load local threshold file '{threshold_filename}': {e}. Please ensure the file exists in the same folder as app.py.")
+        # Fallback: If XLSX fails, try to suggest conversion
+        if threshold_filename.endswith('.xlsx'):
+            st.info("Tip: Convert Sindh.xlsx to Sindh.csv and retry for CSV-only loading.")
         st.stop()
 
 # Streamlit app title
