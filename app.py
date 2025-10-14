@@ -39,7 +39,8 @@ if os.path.exists(threshold_filename):
         progress_bar.progress(30)
     except (pd.errors.EmptyDataError, pd.errors.ParserError) as e:
         st.warning(f"Local file '{threshold_filename}' is invalid/empty. Please re-upload.")
-        os.remove(threshold_filename)  # Clean up bad file
+        if os.path.exists(threshold_filename):
+            os.remove(threshold_filename)  # Clean up bad file
         threshold_df = None
 else:
     # Check for alternative filenames (e.g., capital letters or XLSX)
@@ -134,12 +135,12 @@ if st.button("Generate Alerts"):
 
         status.text('Parsing week and season...')
         progress_bar.progress(50)
-        # Parse periodname
+        # Parse periodname (prioritize KP-like "Week X YYYY..." pattern)
         if 'periodname' in new_df.columns:
             new_df['periodname'] = new_df['periodname'].astype(str).str.strip()
             patterns = [
-                r'(\d{4})W(\d{1,2})',
-                r'Week (\d+) (\d{4})-\d{2}-\d{2} - \d{4}-\d{2}-\d{2}',
+                r'Week (\d+) (\d{4})-\d{2}-\d{2} - \d{4}-\d{2}-\d{2}',  # KP/Sindh format first
+                r'(\d{4})W(\d{1,2})',  # W1 fallback
             ]
             best_extracted = None
             for pat in patterns:
@@ -149,18 +150,28 @@ if st.button("Generate Alerts"):
                         extracted.columns = ['Week', 'Year']
                     else:
                         extracted.columns = ['Year', 'Week']
-                    if extracted.notna().all(axis=1).sum() > 0:
+                    success = extracted.notna().all(axis=1).sum()
+                    if success > 0:
                         best_extracted = extracted
+                        st.write(f"Matched pattern with {success} rows.")
                         break
             if best_extracted is not None:
+                # Drop old Year/Week if exist to avoid conflict
+                if 'Year' in new_df.columns:
+                    new_df = new_df.drop(columns=['Year'])
+                if 'Week' in new_df.columns:
+                    new_df = new_df.drop(columns=['Week'])
                 new_df = pd.concat([new_df, best_extracted], axis=1)
                 new_df['Year'] = pd.to_numeric(new_df['Year'], errors='coerce')
                 new_df['Week'] = pd.to_numeric(new_df['Week'], errors='coerce')
                 new_df = new_df.dropna(subset=['Year', 'Week'])
+                if new_df.empty:
+                    st.error("No valid weeks parsed after dropna.")
+                    st.stop()
                 new_week = new_df['Week'].iloc[0]
                 st.write(f"Parsed Week: {new_week}")
             else:
-                st.error("No pattern matched periodname.")
+                st.error("No pattern matched periodname. Check format (e.g., 'Week 40 2025-...').")
                 st.stop()
         else:
             st.error("No 'periodname' column.")
@@ -191,6 +202,10 @@ if st.button("Generate Alerts"):
             st.error("No disease columns found.")
             st.stop()
         new_df[disease_cols] = new_df[disease_cols].fillna(0).astype(int)
+        # Check if DF is non-empty before melt
+        if new_df.empty:
+            st.error("DataFrame is empty after parsing—cannot melt.")
+            st.stop()
         long_new = pd.melt(new_df, id_vars=['Facility_ID', 'Season'], value_vars=disease_cols, var_name='Disease', value_name='Cases', low_memory=False)
         long_new['Cases'] = long_new['Cases'].astype(int)
         st.write("Melted data shape:", long_new.shape)
@@ -223,7 +238,7 @@ if st.button("Generate Alerts"):
         alerts = alerts[(alerts['Alert_Level'] != 'Normal') & 
                         alerts['Threshold_95'].notna() & 
                         (alerts['Deviation'] >= 1) &
-                        (~alerts['Disease'].str.contains('Other'))].copy()
+                        (~alerts['Disease'].str.contains('Other', na=False))].copy()
         alerts = alerts[['Facility_ID', 'Disease', 'Season', 'Cases', 'Mean', 'SD', 'Threshold_95', 'Threshold_99', 'Alert_Level', 'Deviation']]
 
         status.text('Filtering alerts...')
@@ -260,6 +275,9 @@ if st.button("Generate Alerts"):
             )
         else:
             st.warning("No alerts generated.")
+
+    else:
+        st.warning("Upload threshold and weekly data to generate alerts.")
 
     progress_bar.empty()
     status.empty()
