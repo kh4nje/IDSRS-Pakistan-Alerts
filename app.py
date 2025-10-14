@@ -13,8 +13,7 @@ def load_file(file):
         return pd.read_csv(file)
 
 def load_threshold_from_github(province_key):
-    # Replace 'USERNAME/REPO' with your actual GitHub username and repository name
-    base_url = "https://github.com/kh4nje/IDSRS-Pakistan-Alerts/blob/main/"
+    base_url = "https://raw.githubusercontent.com/kh4nje/IDSRS-Pakistan-Alerts/main/"
     threshold_url = f"{base_url}seasonal_thresholds_{province_key}.csv"
     try:
         response = requests.get(threshold_url)
@@ -252,5 +251,3 @@ st.sidebar.write("2. Upload weekly data (CSV/Excel).")
 st.sidebar.write("3. Adjust filters and click 'Generate Alerts'.")
 st.sidebar.write("4. View and download results.")
 st.sidebar.write("Note: Thresholds are automatically loaded from GitHub. Handles Other exclusion, year-round remapping, and priority inclusion.")
-
-
