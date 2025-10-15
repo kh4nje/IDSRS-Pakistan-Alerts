@@ -257,14 +257,13 @@ if st.button("Generate Alerts"):
     status.empty()
 
 # Instructions
-st.sidebar.write("Developer: Asad khan")
 st.sidebar.title("Instructions")
 st.sidebar.write("1. Select province.")
 st.sidebar.write("2. Ensure the corresponding threshold file is in the same folder as app.py (e.g., AJK.csv for AJK, ICT.csv for Islamabad, Sindh.xlsx for Sindh).")
 st.sidebar.write("3. Upload weekly data (CSV/Excel).")
 st.sidebar.write("4. Adjust filters and click 'Generate Alerts'.")
 st.sidebar.write("5. View and download results (CSV).")
-st.sidebar.write("Note: Handles Other exclusion, year-round remapping, and priority inclusion. Download is CSV to avoid Excel dependency issues.")
+st.sidebar.write("Developer: Asad khan")
 
 
 
