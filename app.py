@@ -41,8 +41,9 @@ def load_threshold_local(province):
         st.stop()
 
 # Streamlit app title
-st.title("Disease Outbreak Detection App for Provinces")
-st.write("Select province, upload weekly data, and generate alerts using province-specific thresholds from local files.")
+st.title("IDSRS Pakistan, Disease Outbreak Detection App for Provinces")
+st.write("By: Asad khan")
+
 
 # Province selection
 provinces = ["AJK", "Balochistan", "Gilgit Baltistan", "Islamabad", "Sindh"]
@@ -264,5 +265,6 @@ st.sidebar.write("3. Upload weekly data (CSV/Excel).")
 st.sidebar.write("4. Adjust filters and click 'Generate Alerts'.")
 st.sidebar.write("5. View and download results (CSV).")
 st.sidebar.write("Note: Handles Other exclusion, year-round remapping, and priority inclusion. Download is CSV to avoid Excel dependency issues.")
+
 
 
