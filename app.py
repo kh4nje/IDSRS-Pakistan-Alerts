@@ -42,7 +42,6 @@ def load_threshold_local(province):
 
 # Streamlit app title
 st.title("IDSRS Pakistan, Disease Outbreak Detection App for Provinces")
-st.write("By: Asad khan")
 
 
 # Province selection
@@ -258,6 +257,7 @@ if st.button("Generate Alerts"):
     status.empty()
 
 # Instructions
+st.sidebar.write("Developer: Asad khan")
 st.sidebar.title("Instructions")
 st.sidebar.write("1. Select province.")
 st.sidebar.write("2. Ensure the corresponding threshold file is in the same folder as app.py (e.g., AJK.csv for AJK, ICT.csv for Islamabad, Sindh.xlsx for Sindh).")
