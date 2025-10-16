@@ -126,7 +126,143 @@ if st.button("Generate Alerts"):
                     success = extracted.notna().all(axis=1).sum()
                     if success > 0:
                         best_extracted = extracted
-                        st.write(f"Matched pattern
+                        st.write(f"Matched pattern with {success} rows.")
+                        break
+            if best_extracted is not None:
+                # Drop old Year/Week if exist to avoid conflict
+                if 'Year' in new_df.columns:
+                    new_df = new_df.drop(columns=['Year'])
+                if 'Week' in new_df.columns:
+                    new_df = new_df.drop(columns=['Week'])
+                new_df = pd.concat([new_df, best_extracted], axis=1)
+                new_df['Year'] = pd.to_numeric(new_df['Year'], errors='coerce')
+                new_df['Week'] = pd.to_numeric(new_df['Week'], errors='coerce')
+                new_df = new_df.dropna(subset=['Year', 'Week'])
+                if new_df.empty:
+                    st.error("No valid weeks parsed after dropna.")
+                    st.stop()
+                new_week = new_df['Week'].iloc[0]
+                st.write(f"Parsed Week: {new_week}")
+            else:
+                st.error("No pattern matched periodname. Check format (e.g., 'Week 40 2025-...').")
+                st.stop()
+        else:
+            st.error("No 'periodname' column.")
+            st.stop()
+
+        # Season
+        def assign_season(week):
+            if pd.isna(week):
+                return 'Unknown'
+            week = int(week)
+            if 10 <= week <= 20:
+                return 'Spring'
+            elif 21 <= week <= 35:
+                return 'Summer'
+            elif 36 <= week <= 43:
+                return 'Autumn'
+            else:
+                return 'Winter'
+
+        new_df['Season'] = new_df['Week'].apply(assign_season)
+        st.write(f"Season: {new_df['Season'].iloc[0]}")
+
+        status.text('Melting and merging data...')
+        progress_bar.progress(70)
+        # Disease columns and melt
+        disease_cols = [col for col in new_df.columns if '(New Cases)' in col or '(New cases)' in col]
+        if len(disease_cols) == 0:
+            st.error("No disease columns found.")
+            st.stop()
+        new_df[disease_cols] = new_df[disease_cols].fillna(0).astype(int)
+        # Check if DF is non-empty before melt
+        if new_df.empty:
+            st.error("DataFrame is empty after parsing—cannot melt.")
+            st.stop()
+        long_new = pd.melt(new_df, id_vars=['Facility_ID', 'Season'], value_vars=disease_cols, var_name='Disease', value_name='Cases')
+        long_new['Cases'] = long_new['Cases'].astype(int)
+        st.write("Melted data shape:", long_new.shape)
+
+        # Year-round override
+        year_round_diseases = [
+            'Acute Flaccid Paralysis (New Cases)', 'Botulism (New Cases)', 'Gonorrhea (New Cases)', 
+            'HIV/AIDS (New Cases)', 'Leprosy (New Cases)', 'Nosocomial Infections (New Cases)', 
+            'Syphilis (New Cases)', 'Visceral Leishmaniasis (New Cases)', 'Neonatal Tetanus (New Cases)'
+        ]
+        long_new.loc[long_new['Disease'].isin(year_round_diseases), 'Season'] = 'Year-Round'
+
+        # Filter thresholds for speed
+        current_season = new_df['Season'].iloc[0]
+        if 'Season' not in threshold_df.columns:
+            st.error("Threshold file does not have 'Season' column. Please check the file structure.")
+            st.stop()
+        filtered_thresholds = threshold_df[threshold_df['Season'].isin([current_season, 'Year-Round'])]
+        alerts = long_new.merge(filtered_thresholds[['Facility_ID', 'Disease', 'Season', 'Threshold_95', 'Threshold_99', 'Mean', 'SD']], how='left')
+
+        alerts['Alert_Level'] = np.where(
+            (alerts['Cases'] > alerts['Threshold_99']) & alerts['Threshold_99'].notna(), 'High Alert',
+            np.where(
+                (alerts['Cases'] > alerts['Threshold_95']) & alerts['Threshold_95'].notna(), 'Alert', 'Normal'
+            )
+        )
+        alerts['Deviation'] = np.where(
+            alerts['Alert_Level'] == 'High Alert', alerts['Cases'] - alerts['Threshold_99'],
+            np.where(alerts['Alert_Level'] == 'Alert', alerts['Cases'] - alerts['Threshold_95'], 0)
+        )
+
+        # Filter alerts
+        alerts = alerts[(alerts['Alert_Level'] != 'Normal') & 
+                        alerts['Threshold_95'].notna() & 
+                        (~alerts['Disease'].str.contains('Other', na=False))].copy()
+        alerts = alerts[['Facility_ID', 'Disease', 'Season', 'Cases', 'Mean', 'SD', 'Threshold_95', 'Threshold_99', 'Alert_Level', 'Deviation']]
+
+        status.text('Filtering alerts...')
+        progress_bar.progress(90)
+        # Priority filtering
+        priority_alerts = alerts[alerts['Disease'].isin(selected_priority_diseases)]
+        non_priority_alerts = alerts[~alerts['Disease'].isin(selected_priority_diseases)]
+        st.write(f"Priority alerts count: {len(priority_alerts)}, Non-priority alerts count: {len(non_priority_alerts)}")  # Debug line - remove if not needed
+        
+        # Conditionally render sliders only if non-priority alerts exist
+        if len(non_priority_alerts) > 0:
+            col1, col2 = st.columns(2)
+            with col1:
+                top_n = st.slider("Top N Non-Priority Alerts", min_value=0, max_value=len(non_priority_alerts), value=min(50, len(non_priority_alerts)))
+            with col2:
+                max_dev = non_priority_alerts['Deviation'].max()
+                min_dev = st.slider("Min Deviation for Non-Priority", min_value=0.0, max_value=max_dev, value=0.0)
+        else:
+            top_n = 0
+            min_dev = 0.0
+        
+        filtered_non_priority = non_priority_alerts[(non_priority_alerts['Deviation'] >= min_dev)].head(top_n)
+        final_alerts = pd.concat([priority_alerts, filtered_non_priority], ignore_index=True)
+        final_alerts = final_alerts.sort_values('Deviation', ascending=False)
+
+        st.write(f"Total alerts for {selected_province}: {len(final_alerts)} ({len(priority_alerts)} priority + {len(filtered_non_priority)} filtered)")
+
+        if not final_alerts.empty:
+            st.dataframe(final_alerts)
+
+            # Download as CSV to avoid openpyxl dependency
+            status.text('Preparing download...')
+            progress_bar.progress(100)
+            province_key = selected_province.lower().replace(" ", "_")
+            csv = final_alerts.to_csv(index=False).encode('utf-8')
+            st.download_button(
+                label=f"Download Alerts for {selected_province} Week {new_week} (CSV)",
+                data=csv,
+                file_name=f'alerts_{province_key}_week_{new_week}.csv',
+                mime='text/csv'
+            )
+        else:
+            st.warning("No alerts generated.")
+
+    else:
+        st.warning("Upload weekly data to generate alerts.")
+
+    progress_bar.empty()
+    status.empty()
 
 # Instructions
 st.sidebar.title("Instructions")
@@ -405,6 +541,7 @@ st.sidebar.write("5. View and download results (CSV).")
 st.sidebar.write("Developer: Asad khan")
 
 '''
+
 
 
 
