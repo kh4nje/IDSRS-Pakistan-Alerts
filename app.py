@@ -57,6 +57,9 @@ high_priority_diseases = [
     'Acute Flaccid Paralysis (New Cases)'
 ]
 
+# Priority diseases: Union of high-priority and year-round
+priority_diseases = list(set(high_priority_diseases + year_round_diseases))
+
 # Streamlit app title and description
 st.title("IDSRS Pakistan: Disease Outbreak Detection App")
 st.markdown("**A tool for early detection of disease outbreaks across Pakistani provinces using weekly surveillance data.**")
@@ -208,7 +211,7 @@ if st.button("🚨 Generate Outbreak Alerts", type="primary"):
         )
 
         # For high-priority diseases, set missing thresholds to 0 to enable 1-case alerts
-        priority_mask = alerts['Disease'].isin(high_priority_diseases)
+        priority_mask = alerts['Disease'].isin(priority_diseases)
         alerts.loc[priority_mask & alerts['Threshold_95'].isna(), 'Threshold_95'] = 0
         alerts.loc[priority_mask & alerts['Threshold_99'].isna(), 'Threshold_99'] = 0
 
@@ -219,24 +222,27 @@ if st.button("🚨 Generate Outbreak Alerts", type="primary"):
                 (alerts['Cases'] > alerts['Threshold_95']) & alerts['Threshold_95'].notna(), 'Alert', 'Normal'
             )
         )
+        # Old Deviation formula: 95 for Alert, 99 for High
         alerts['Deviation'] = np.where(
             alerts['Alert_Level'] == 'High Alert', alerts['Cases'] - alerts['Threshold_99'],
             np.where(alerts['Alert_Level'] == 'Alert', alerts['Cases'] - alerts['Threshold_95'], 0)
         )
 
         # Simple filter: non-normal alerts, with thresholds, excluding 'Other'
-        # Min cases: 1 for high-priority, 3 for others
-        # For Year-Round: High Alert only; for Seasonal: Alert or High
-        is_high_priority = alerts['Disease'].isin(high_priority_diseases)
-        alerts['Min_Cases'] = np.where(is_high_priority, 1, 3)
+        # Min cases: 1 for priority, 3 for others
+        is_priority = alerts['Disease'].isin(priority_diseases)
+        alerts['Min_Cases'] = np.where(is_priority, 1, 3)
         base_filter = (
             (alerts['Cases'] >= alerts['Min_Cases']) & 
             alerts['Threshold_95'].notna() & 
             (~alerts['Disease'].str.contains('Other', na=False))
         )
-        year_round_filter = (alerts['Season'] == 'Year-Round') & (alerts['Alert_Level'] == 'High Alert') & base_filter
-        seasonal_filter = (alerts['Season'] != 'Year-Round') & (alerts['Alert_Level'] != 'Normal') & base_filter
-        alerts = alerts[year_round_filter | seasonal_filter].copy()
+        # For Seasonal (non-year-round, non-priority): High Alert only
+        # For Priority: Alert or High (old formula)
+        # Year-Round subset of priority: High Alert only (as before)
+        seasonal_non_priority_filter = (~is_priority & (alerts['Season'] != 'Year-Round') & (alerts['Alert_Level'] == 'High Alert')) & base_filter
+        priority_filter = is_priority & (alerts['Alert_Level'] != 'Normal') & base_filter
+        alerts = alerts[seasonal_non_priority_filter | priority_filter].copy()
         alerts['District'] = alerts['Facility_ID'].str.split('_').str[2]
         alerts = alerts[['Facility_ID', 'District', 'Disease', 'Season', 'Cases', 'Mean', 'SD', 'Threshold_95', 'Threshold_99', 'Alert_Level', 'Deviation', 'Min_Cases']]
 
@@ -253,16 +259,16 @@ if st.button("🚨 Generate Outbreak Alerts", type="primary"):
         # Summary metrics
         total_alerts = len(alerts)
         high_alerts = len(alerts[alerts['Alert_Level'] == 'High Alert'])
-        priority_alerts_count = len(alerts[is_high_priority])
+        priority_alerts_count = len(alerts[is_priority])
         col_a, col_b, col_c = st.columns(3)
         with col_a:
             st.metric("Total Alerts", total_alerts)
         with col_b:
             st.metric("High Alerts", high_alerts)
         with col_c:
-            st.metric("Priority Alerts (1-case OK)", priority_alerts_count)
+            st.metric("Priority Alerts", priority_alerts_count)
 
-        st.success(f"**{total_alerts} total alerts** generated based on seasonal thresholds (Year-Round: High Alert only; Priorities: ≥1 case).")
+        st.success(f"**{total_alerts} total alerts** (Seasonal non-priority: High Alert only; Priorities: Alert/High; Year-Round: High Alert).")
 
         st.markdown("### 📊 Outbreak Alerts (Sorted by Deviation)")
         st.dataframe(alerts.style.format({
@@ -303,12 +309,14 @@ with st.sidebar:
     st.markdown("---")
     st.header("🛠️ How It Works")
     st.markdown("""
-    - **Simple Alerts**: Based on cases > Threshold_95 (Alert) or > Threshold_99 (High Alert) from historical data.
-    - **Year-Round Priority**: For non-seasonal diseases (e.g., HIV, TB), overrides to Year-Round season and requires High Alert only.
-    - **High-Priority (1-Case OK)**: For critical diseases (e.g., CCHF, Measles, AFP), alerts on ≥1 case; missing thresholds treated as 0.
-    - **Standard Filter**: ≥3 cases for other diseases; excludes 'Other'.
-    - **Prioritization**: Sorted by deviation from threshold.
+    - **Alerts**: > Threshold_95 (Alert) or > Threshold_99 (High Alert).
+    - **Seasonal Non-Priority**: High Alert only (stricter).
+    - **Priority Diseases**: Alert or High (old formula, sensitive; ≥1 case).
+    - **Year-Round (subset of priority)**: High Alert only.
+    - **Deviation**: Old formula (from 95th for Alert, 99th for High).
+    - **Filters**: Excludes 'Other'; min cases per category.
+    - **Prioritization**: Sorted by deviation.
     - No weights or complex multipliers—just straightforward threshold checks.
     """)
     st.markdown("---")
-    st.markdown("*Developed by Asad Khan* | *Version 2.3 (Shortened Priorities)*")
+    st.markdown("*Developed by Asad Khan* | *Version 2.5 (Stricter Seasonal + Old Priority)*")
