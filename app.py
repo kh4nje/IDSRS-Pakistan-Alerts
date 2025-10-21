@@ -70,24 +70,6 @@ if new_file is None:
     st.info("👆 Please upload your weekly data file to generate alerts.")
     st.stop()
 
-# Priority diseases selection
-st.markdown("### Priority Diseases")
-st.info("These high-risk diseases are always included in alerts, regardless of filters.")
-priority_diseases = [
-    "Crimean Congo Hemorrhagic Fever (New Cases)",
-    "Anthrax (New Cases)",
-    "Botulism (New Cases)",
-    "Diphtheria (Probable) (New Cases)",
-    "Neonatal Tetanus (New Cases)",
-    "Acute Flaccid Paralysis (New Cases)"
-]
-selected_priority_diseases = st.multiselect(
-    "Select priority diseases:",
-    options=priority_diseases,
-    default=priority_diseases,
-    help="Unselect to exclude from alerts (not recommended for these critical ones)."
-)
-
 # Run button
 if st.button("🚨 Generate Outbreak Alerts", type="primary"):
     if threshold_df is not None:
@@ -235,26 +217,8 @@ if st.button("🚨 Generate Outbreak Alerts", type="primary"):
 
         status.text('Applying filters and summarizing...')
         progress_bar.progress(90)
-        # Priority and non-priority filtering
-        priority_alerts = alerts[alerts['Disease'].isin(selected_priority_diseases)]
-        non_priority_alerts = alerts[~alerts['Disease'].isin(selected_priority_diseases)]
-        
-        # FIXED: Conditional sliders only if non-priority alerts exist
-        if len(non_priority_alerts) > 0:
-            col1, col2 = st.columns(2)
-            with col1:
-                top_n = st.slider("Top N Non-Priority Alerts", min_value=0, max_value=len(non_priority_alerts), value=min(50, len(non_priority_alerts)), help="Limit non-priority alerts by rank (highest deviation first).")
-            with col2:
-                max_dev = non_priority_alerts['Deviation'].max()
-                min_dev = st.slider("Min Deviation for Non-Priority", min_value=0.0, max_value=max_dev, value=0.0, help="Minimum cases above threshold to include.")
-        else:
-            top_n = 0
-            min_dev = 0.0
-            st.info("ℹ️ No non-priority alerts to filter.")
-
-        filtered_non_priority = non_priority_alerts[non_priority_alerts['Deviation'] >= min_dev].head(top_n)
-        final_alerts = pd.concat([priority_alerts, filtered_non_priority], ignore_index=True)
-        final_alerts = final_alerts.sort_values('Deviation', ascending=False)
+        # Simplified: All diseases treated equally - no priority split or sliders
+        final_alerts = alerts.sort_values('Deviation', ascending=False)
 
         # Summary metrics
         total_alerts = len(final_alerts)
@@ -268,11 +232,11 @@ if st.button("🚨 Generate Outbreak Alerts", type="primary"):
         with col_c:
             st.metric("Alert Rate", f"{alert_ratio:.2f}%", help="Percentage of facility-disease pairs alerting.")
 
-        st.write(f"**{total_alerts} total alerts** ({len(priority_alerts)} priority + {len(filtered_non_priority)} filtered non-priority).")
+        st.write(f"**{total_alerts} total alerts** (all diseases included).")
 
         if not final_alerts.empty:
             st.markdown("### 📊 Outbreak Alerts Table")
-            # FIXED: Simplified styling to avoid matplotlib dependency
+            # Simplified styling to avoid matplotlib dependency
             styled_alerts = final_alerts.style.format({'Cases': '{:.0f}', 'Mean': '{:.1f}', 'SD': '{:.1f}', 'Threshold_95': '{:.1f}', 'Threshold_99': '{:.1f}', 'Deviation': '{:.0f}'})
             st.dataframe(styled_alerts)
 
@@ -306,8 +270,7 @@ with st.sidebar:
     1. **Select Province**: Choose from the dropdown.
     2. **Threshold File**: Ensure the matching file is in your app folder (e.g., `seasonal_thresholds_kp.xlsx` for KP).
     3. **Upload Data**: Weekly DHIS2 export with `periodname`, org levels, and `(New Cases)` columns.
-    4. **Priorities**: Adjust high-risk diseases if needed.
-    5. **Generate**: Click the button to process and view alerts.
+    4. **Generate**: Click the button to process and view alerts.
     """)
     st.markdown("---")
     st.header("🛠️ Tips")
@@ -318,4 +281,4 @@ with st.sidebar:
     - **No Matches?**: Check Facility_ID alignment or regenerate thresholds.
     """)
     st.markdown("---")
-    st.markdown("*Developed by Asad Khan* | *Version 2.2*")
+    st.markdown("*Developed by Asad Khan* | *Version 2.3*")
