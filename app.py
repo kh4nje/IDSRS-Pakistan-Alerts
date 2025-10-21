@@ -1,38 +1,12 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-import os
-import re
+from datetime import datetime
 
-# -----------------------
-# Utility Functions
-# -----------------------
-@st.cache_data
-def load_csv(file_path):
-    return pd.read_csv(file_path)
-
-@st.cache_data
-def load_excel(file_path):
-    return pd.read_excel(file_path)
-
-def parse_week_number(period):
-    """Extract week number (integer) from periodname like 'Week 23 2024' or '2024W23'."""
-    match = re.search(r'\d{1,2}', str(period))
-    return int(match.group()) if match else None
-
-def determine_season(week):
-    """Assign season based on week number."""
-    if 6 <= week <= 18:
-        return 'Spring'
-    elif 19 <= week <= 31:
-        return 'Summer'
-    elif 32 <= week <= 44:
-        return 'Autumn'
-    else:
-        return 'Winter'
-
+# ----------------------------------------------------------
+# Load local threshold file automatically based on province
+# ----------------------------------------------------------
 def load_threshold_local(province):
-    """Load threshold file based on province name and file mapping."""
     province_files = {
         "AJK": "AJK.csv",
         "Balochistan": "Balochistan.csv",
@@ -43,126 +17,104 @@ def load_threshold_local(province):
     }
 
     if province not in province_files:
-        st.error(f"❌ No threshold file mapping found for {province}.")
-        st.stop()
+        st.error(f"No threshold file found for {province}.")
+        return None
 
     file_name = province_files[province]
 
-    if not os.path.exists(file_name):
-        st.error(f"❌ Threshold file '{file_name}' not found in the app directory.")
-        st.stop()
+    try:
+        if file_name.endswith('.csv'):
+            df = pd.read_csv(file_name)
+        else:
+            df = pd.read_excel(file_name)
+        st.success(f"✅ Threshold file loaded for {province}: {file_name}")
+        return df
+    except Exception as e:
+        st.error(f"Error loading threshold file: {e}")
+        return None
 
-    if file_name.endswith(".csv"):
-        df = load_csv(file_name)
-    else:
-        df = load_excel(file_name)
 
-    st.sidebar.success(f"✅ Loaded threshold file: {file_name}")
-    return df
+# ----------------------------------------------------------
+# Process alerts and detect threshold crossing
+# ----------------------------------------------------------
+def process_alerts(data_df, threshold_df, top_n=10, min_deviation=2):
+    required_cols = ['province', 'district', 'tehsil', 'ucName', 'facilityname', 'disease', 'week', 'cases']
 
-def validate_threshold_file(th_df):
-    """Ensure threshold file has required columns."""
-    required_cols = {'Facility_ID', 'Disease', 'Season', 'Mean', 'SD', 'Threshold_95', 'Threshold_99'}
-    missing = required_cols - set(th_df.columns)
+    # Ensure all required columns exist
+    missing = [col for col in required_cols if col not in data_df.columns]
     if missing:
-        st.error(f"Threshold file is missing columns: {', '.join(missing)}")
-        return False
-    return True
+        st.error(f"Missing columns in uploaded data: {missing}")
+        return pd.DataFrame()
 
-# -----------------------
-# Main Processing Logic
-# -----------------------
-def process_alerts(data_df, threshold_df, top_n, min_deviation):
-    """Main alert generation logic."""
-    data_df = data_df.copy()
-    threshold_df = threshold_df.copy()
+    # Create a unique Facility ID
+    data_df['Facility_ID'] = (
+        data_df[['province', 'district', 'tehsil', 'ucName', 'facilityname']]
+        .astype(str)
+        .agg('-'.join, axis=1)
+    )
 
-    # Standardize column names
-    data_df.columns = data_df.columns.str.strip()
+    # Use only the last week's data
+    latest_week = data_df['week'].max()
+    data_df = data_df[data_df['week'] == latest_week]
 
-    # Parse week and season
-    data_df['Week_Number'] = data_df['periodname'].apply(parse_week_number)
-    data_df['Season'] = data_df['Week_Number'].apply(determine_season)
-
-    # Build Facility_ID
-    data_df['Facility_ID'] = data_df[['province', 'district', 'tehsil', 'ucName', 'facilityname']].astype(str).agg('-'.join, axis=1)
-
-    # Merge thresholds
+    # Merge with thresholds
     merged = pd.merge(
         data_df,
         threshold_df,
-        on=['Facility_ID', 'Disease', 'Season'],
-        how='left'
+        how='left',
+        left_on=['province', 'disease'],
+        right_on=['province', 'disease']
     )
 
-    # Remove missing threshold rows
-    merged = merged.dropna(subset=['Threshold_95', 'Threshold_99'], how='all')
+    # Calculate deviation
+    merged['deviation'] = merged['cases'] - merged['threshold']
 
-    # Compute deviation
-    merged['Deviation'] = merged['Current_Week'] - merged['Mean']
+    # Identify alerts only where threshold is crossed
+    alerts = merged[merged['deviation'] > 0]
 
-    # Detect threshold crossings
-    merged['Crossed_99'] = merged['Current_Week'] > merged['Threshold_99']
-    merged['Crossed_95'] = (merged['Current_Week'] > merged['Threshold_95']) & (~merged['Crossed_99'])
+    # Rank by deviation
+    alerts = alerts.sort_values(by='deviation', ascending=False).head(top_n)
 
-    # Include only records crossing thresholds
-    alerts = merged[(merged['Crossed_95']) | (merged['Crossed_99'])].copy()
+    # Return only relevant columns
+    return alerts[['province', 'district', 'tehsil', 'ucName', 'facilityname', 'disease', 'cases', 'threshold', 'deviation', 'week']]
 
-    # Compute deviation percentage
-    alerts['Deviation_%'] = np.where(
-        alerts['Mean'] > 0,
-        ((alerts['Current_Week'] - alerts['Mean']) / alerts['Mean']) * 100,
-        0
-    ).round(1)
 
-    # Apply minimum deviation filter
-    alerts = alerts[alerts['Deviation_%'] >= min_deviation]
+# ----------------------------------------------------------
+# Streamlit App
+# ----------------------------------------------------------
+st.title("🦠 Disease Alert Detection (Weekly Threshold-Based)")
+st.markdown("Upload **last week’s line list**, and the system will automatically load the threshold file for the selected province.")
 
-    # Sort alerts
-    alerts = alerts.sort_values(['Crossed_99', 'Deviation_%'], ascending=[False, False])
-
-    # Return top N
-    return alerts.head(top_n)
-
-# -----------------------
-# Streamlit UI
-# -----------------------
-st.set_page_config(page_title="Disease Alert Generator", layout="wide")
-st.title("📊 Automated Disease Alert Generator")
-
-st.sidebar.header("⚙️ Configuration")
-
-province = st.sidebar.selectbox(
+# Select province (to load correct threshold)
+province = st.selectbox(
     "Select Province:",
     ["AJK", "Balochistan", "Gilgit Baltistan", "Islamabad", "Sindh", "KP"]
 )
 
-# Load province-specific threshold file automatically
+# Load threshold automatically
 threshold_df = load_threshold_local(province)
-if not validate_threshold_file(threshold_df):
-    st.stop()
 
-# Upload current week data only
-uploaded_data = st.sidebar.file_uploader("⬆️ Upload Current Week Data CSV:", type=["csv"])
-if not uploaded_data:
-    st.info("Please upload the current week’s data file to generate alerts.")
-    st.stop()
+# Upload last week data
+uploaded_file = st.file_uploader("Upload Last Week Data (CSV or Excel)", type=['csv', 'xlsx'])
 
-data_df = load_csv(uploaded_data)
+if uploaded_file is not None and threshold_df is not None:
+    try:
+        if uploaded_file.name.endswith('.csv'):
+            data_df = pd.read_csv(uploaded_file)
+        else:
+            data_df = pd.read_excel(uploaded_file)
 
-# Sidebar filters
-top_n = st.sidebar.slider("Show top N alerts:", 5, 50, 15)
-min_deviation = st.sidebar.slider("Minimum deviation %:", 0, 200, 50, 10)
+        st.write(f"✅ Data file loaded successfully. Total records: {len(data_df)}")
 
-# Generate alerts
-alerts_df = process_alerts(data_df, threshold_df, top_n, min_deviation)
+        # Process and show alerts
+        alerts_df = process_alerts(data_df, threshold_df)
 
-# Display results
-st.subheader("🚨 Disease Alerts")
-st.dataframe(alerts_df)
-
-if not alerts_df.empty:
-    csv = alerts_df.to_csv(index=False).encode('utf-8')
-    st.download_button("📥 Download Alerts CSV", csv, "alerts.csv", "text/csv")
+        if not alerts_df.empty:
+            st.success("🚨 Threshold crossed! Showing priority disease alerts:")
+            st.dataframe(alerts_df)
+        else:
+            st.info("✅ No diseases crossed the threshold this week.")
+    except Exception as e:
+        st.error(f"Error processing data: {e}")
 else:
-    st.success("✅ No threshold crossings detected for this week.")
+    st.warning("Please upload the last week data and select a province.")
