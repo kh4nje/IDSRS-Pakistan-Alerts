@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import os
+import re
 
 # -----------------------
 # Utility Functions
@@ -12,7 +13,6 @@ def load_csv(file):
 
 def parse_week_number(period):
     """Extract week number (integer) from periodname like 'Week 23 2024' or '2024W23'."""
-    import re
     match = re.search(r'\d{1,2}', str(period))
     return int(match.group()) if match else None
 
@@ -27,15 +27,15 @@ def determine_season(week):
     else:
         return 'Winter'
 
-def get_or_create_threshold_file(province):
-    """Get or create a province-specific threshold CSV file."""
+def get_threshold_file(province):
+    """Load existing province-specific threshold file."""
     filename = f"{province}_threshold.csv"
     if os.path.exists(filename):
         st.sidebar.info(f"✅ Loaded threshold file for {province}")
         return pd.read_csv(filename)
     else:
-        st.sidebar.warning(f"⚠️ No existing threshold file for {province}. Upload one below.")
-        return pd.DataFrame()
+        st.sidebar.error(f"❌ Threshold file not found for {province}. Please add it manually first.")
+        st.stop()
 
 def validate_threshold_file(th_df):
     """Ensure threshold file has required columns."""
@@ -115,20 +115,15 @@ province = st.sidebar.selectbox(
     ["Punjab", "Sindh", "Balochistan", "Khyber Pakhtunkhwa"]
 )
 
-threshold_df = get_or_create_threshold_file(province)
-if not threshold_df.empty:
-    if not validate_threshold_file(threshold_df):
-        st.stop()
+# Load saved threshold automatically
+threshold_df = get_threshold_file(province)
+if not validate_threshold_file(threshold_df):
+    st.stop()
 
-uploaded_threshold = st.sidebar.file_uploader("Upload Threshold CSV (optional):", type=["csv"])
-if uploaded_threshold:
-    threshold_df = load_csv(uploaded_threshold)
-    threshold_df.to_csv(f"{province}_threshold.csv", index=False)
-    st.sidebar.success(f"✅ Thresholds updated and saved for {province}")
-
-uploaded_data = st.sidebar.file_uploader("Upload Current Data CSV:", type=["csv"])
+# Ask only for current week's data
+uploaded_data = st.sidebar.file_uploader("⬆️ Upload Current Week Data CSV:", type=["csv"])
 if not uploaded_data:
-    st.info("⬆️ Please upload the current data CSV file to continue.")
+    st.info("Please upload the current week’s data file to generate alerts.")
     st.stop()
 
 data_df = load_csv(uploaded_data)
