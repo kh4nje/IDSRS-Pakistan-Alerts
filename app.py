@@ -184,23 +184,41 @@ if st.button("🚨 Generate Outbreak Alerts", type="primary"):
             how='left'
         )
 
+        # Define high-priority diseases (alert on >=1 case)
+        high_priority_diseases = [
+            "Crimean Congo Hemorrhagic Fever (New Cases)",
+            "Anthrax (New Cases)",
+            "Botulism (New Cases)",
+            "Diphtheria (Probable) (New Cases)",
+            "Neonatal Tetanus (New Cases)",
+            "Acute Flaccid Paralysis (New Cases)"
+        ]
+
         # Generate alert levels
-        alerts['Alert_Level'] = np.where(
-            (alerts['Cases'] > alerts['Threshold_99']) & alerts['Threshold_99'].notna(), 'High Alert',
-            np.where(
-                (alerts['Cases'] > alerts['Threshold_95']) & alerts['Threshold_95'].notna(), 'Alert', 'Normal'
-            )
-        )
+        is_high_priority = alerts['Disease'].isin(high_priority_diseases)
+        has_valid_threshold = alerts['Threshold_95'].notna()
+
+        # For high-priority diseases: Alert if Cases >=1 and valid threshold
+        high_priority_mask = is_high_priority & (alerts['Cases'] >= 1) & has_valid_threshold
+        alerts.loc[high_priority_mask & (alerts['Cases'] > alerts['Threshold_99']), 'Alert_Level'] = 'High Alert'
+        alerts.loc[high_priority_mask & (alerts['Cases'] <= alerts['Threshold_99']) & (alerts['Cases'] >= 1), 'Alert_Level'] = 'Alert'
+
+        # For seasonal (non-high-priority) diseases: Use thresholds, but only if Cases >1
+        seasonal_mask = ~is_high_priority & has_valid_threshold & (alerts['Cases'] > 1)
+        alerts.loc[seasonal_mask & (alerts['Cases'] > alerts['Threshold_99']), 'Alert_Level'] = 'High Alert'
+        alerts.loc[seasonal_mask & (alerts['Cases'] <= alerts['Threshold_99']) & (alerts['Cases'] > alerts['Threshold_95']), 'Alert_Level'] = 'Alert'
+        alerts.loc[~seasonal_mask & ~high_priority_mask, 'Alert_Level'] = 'Normal'  # Ensure others are Normal
+
         # Deviation: From relevant threshold (95 for Alert, 99 for High)
         alerts['Deviation'] = np.where(
             alerts['Alert_Level'] == 'High Alert', alerts['Cases'] - alerts['Threshold_99'],
             np.where(alerts['Alert_Level'] == 'Alert', alerts['Cases'] - alerts['Threshold_95'], 0)
         )
 
-        # Simple filter: Only non-normal alerts with valid thresholds (include all diseases above threshold)
+        # Simple filter: Only non-normal alerts with valid thresholds
         alerts = alerts[
             (alerts['Alert_Level'] != 'Normal') & 
-            alerts['Threshold_95'].notna()
+            has_valid_threshold
         ].copy()
         alerts['District'] = alerts['Facility_ID'].str.split('_').str[2]
         alerts = alerts[['Facility_ID', 'District', 'Disease', 'Season', 'Cases', 'Mean', 'SD', 'Threshold_95', 'Threshold_99', 'Alert_Level', 'Deviation']]
@@ -266,6 +284,8 @@ with st.sidebar:
     st.header("🛠️ How It Works")
     st.markdown("""
     - **Simple Alerts**: Any disease > Threshold_95 (Alert) or > Threshold_99 (High Alert) from historical seasonal data.
+    - **High-Priority Diseases** (e.g., CCHF, Anthrax): Alert on >=1 case.
+    - **Seasonal Diseases**: Exclude if only 1 case; require >1 case + above threshold.
     - **No Filters**: Includes all qualifying (even 'Other', low cases)—just thresholds.
     - **Deviation**: From 95th for Alert, 99th for High.
     - **Prioritization**: Sorted by deviation.
