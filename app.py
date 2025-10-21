@@ -131,14 +131,15 @@ alert_mode = st.radio(
     help="Routine: Default for standard use. Outbreak Hunt: Sensitive for emerging threats. Priority Only: Strict focus on urgent cases. All Signals: Show everything above thresholds."
 )
 
-# Map mode to settings
+# Map mode to settings (updated for less noise: higher defaults, min_cases floor)
+min_cases = 2  # Global floor: No single-case alerts
 if alert_mode == "Routine (Balanced Weekly Scan)":
-    min_multiplier = 2.5
+    min_multiplier = 3.0  # Bumped up
     top_n = 50
     require_cluster = True
     cluster_min = 2
 elif alert_mode == "Outbreak Hunt (Early Detection)":
-    min_multiplier = 1.5
+    min_multiplier = 2.0  # Slightly sensitive but floored
     top_n = 100
     require_cluster = True
     cluster_min = 2
@@ -148,12 +149,12 @@ elif alert_mode == "Priority Only (Top High-Impact)":
     require_cluster = True
     cluster_min = 3
 else:  # All Signals
-    min_multiplier = 1.0
+    min_multiplier = 1.5  # Mild filter
     top_n = 200
     require_cluster = False
-    cluster_min = 1  # Ignored if not clustering
+    cluster_min = 1
 
-st.info(f"**Selected: {alert_mode}** | Min surge: {min_multiplier}x mean | Top alerts: {top_n} | Clustering: {'ON (≥{cluster_min} facilities)' if require_cluster else 'OFF'}")
+st.info(f"**Selected: {alert_mode}** | Min surge: {min_multiplier}x mean | Min cases: {min_cases} | Top alerts: {top_n} | Clustering: {'ON (≥{cluster_min} facilities)' if require_cluster else 'OFF'}")
 
 # Run button
 if st.button("🚨 Generate Outbreak Alerts", type="primary"):
@@ -294,11 +295,12 @@ if st.button("🚨 Generate Outbreak Alerts", type="primary"):
             np.where(alerts['Alert_Level'] == 'Alert', alerts['Cases'] - alerts['Threshold_95'], 0)
         )
 
-        # Filter to non-normal alerts, with thresholds, excluding 'Other'
+        # Filter to non-normal alerts, with thresholds, excluding 'Other' + NEW: Min cases floor
         alerts = alerts[
             (alerts['Alert_Level'] != 'Normal') & 
             alerts['Threshold_95'].notna() & 
-            (~alerts['Disease'].str.contains('Other', na=False))
+            (~alerts['Disease'].str.contains('Other', na=False)) &
+            (alerts['Cases'] >= min_cases)  # Suppress single cases
         ].copy()
         alerts = alerts[['Facility_ID', 'Disease', 'Season', 'Cases', 'Mean', 'SD', 'Threshold_95', 'Threshold_99', 'Alert_Level', 'Deviation']]
 
@@ -310,8 +312,11 @@ if st.button("🚨 Generate Outbreak Alerts", type="primary"):
         # Extract district from Facility_ID (now assuming level2 is district per user update)
         alerts['District'] = alerts['Facility_ID'].str.split('_').str[2]  # e.g., 'Khyber Pakhtunkhwah' or district if level2
 
-        # Year-Round: Include all (even low dev)
+        # Year-Round: Stricter—only High Alert or ≥3 cases (update min_cases for year-round if needed)
         year_round_alerts = alerts[alerts['Season'] == 'Year-Round'].copy()
+        year_round_alerts = year_round_alerts[
+            (year_round_alerts['Alert_Level'] == 'High Alert') | (year_round_alerts['Cases'] >= 3)
+        ].copy()  # Extra filter for year-round noise
 
         # Seasonal: Filter by min % increase
         seasonal_alerts = alerts[alerts['Season'] != 'Year-Round'].copy()
@@ -359,7 +364,7 @@ if st.button("🚨 Generate Outbreak Alerts", type="primary"):
         with col_c:
             st.metric("Alert Rate", f"{alert_ratio:.2f}%", help="Percentage of facility-disease pairs alerting.")
 
-        st.success(f"**{total_alerts} prioritized alerts** (Year-Round: all included; Seasonal: >{min_multiplier}x mean + clusters).")
+        st.success(f"**{total_alerts} prioritized alerts** (≥{min_cases} cases; Year-Round: High Alert or ≥3 cases; Seasonal: >{min_multiplier}x mean + clusters).")
 
         if not final_alerts.empty:
             st.markdown("### 📊 Prioritized Outbreak Alerts (Top by Severity)")
@@ -404,10 +409,11 @@ with st.sidebar:
     st.markdown("---")
     st.header("🛠️ How It Works")
     st.markdown("""
-    - **Year-Round Diseases**: All alerts included (e.g., AFP—even 1 case; covers TB, Brucellosis, etc.).
+    - **Noise Reduction**: ≥2 cases min; no singletons. Year-Round: High Alert or ≥3 cases only.
+    - **Year-Round Diseases**: Strict inclusion (e.g., AFP—even 1 won't flag now).
     - **Seasonal Filtering**: Surge threshold + district clusters (per mode).
     - **Scoring**: Ranks by % deviation × disease impact + cluster bonus.
-    - **Weights**: Dengue/CCHF=2.5-3.0x boost; Scabies=0.5x (edit dict to tune).
+    - **Weights**: Dengue/Measles boosted; Scabies downweighted.
     """)
     st.markdown("---")
-    st.markdown("*Developed by Asad Khan* | *Version 2.9*")
+    st.markdown("*Developed by Asad Khan* | *Version 2.10*")
