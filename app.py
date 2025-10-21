@@ -283,8 +283,8 @@ if st.button("🚨 Generate Outbreak Alerts", type="primary"):
             alerts['Mean'] > 0, alerts['Cases'] / alerts['Mean'], np.inf  # Treat 0 mean as infinite for rare diseases
         )
 
-        # Extract district from Facility_ID (assume level3 is district; adjust index if needed)
-        alerts['District'] = alerts['Facility_ID'].str.split('_').str[3]  # e.g., 'Charsadda' from 'Pakistan_Khyber Pakhtunkhwah_Charsadda_...'
+        # Extract district from Facility_ID (now assuming level2 is district per user update)
+        alerts['District'] = alerts['Facility_ID'].str.split('_').str[2]  # e.g., 'Khyber Pakhtunkhwah' or district if level2
 
         # Year-Round: Include all (even low dev)
         year_round_alerts = alerts[alerts['Season'] == 'Year-Round'].copy()
@@ -386,4 +386,4 @@ with st.sidebar:
     - **Weights**: Dengue/CCHF=2.5-3.0x boost; Scabies=0.5x (edit dict in code to tune). *100% coverage of provided IDSRS list!*
     """)
     st.markdown("---")
-    st.markdown("*Developed by Asad Khan* | *Version 2.7*")
+    st.markdown("*Developed by Asad Khan* | *Version 2.8*")
