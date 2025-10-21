@@ -40,6 +40,15 @@ def load_threshold_local(province):
         st.error(f"Failed to load local threshold file '{threshold_filename}': {e}. Please ensure the file exists in the same folder as app.py.")
         st.stop()
 
+# Year-round diseases (priority, non-seasonal: stricter High Alert only)
+year_round_diseases = [
+    'Acute Flaccid Paralysis (New Cases)', 'Botulism (New Cases)', 'Gonorrhea (New Cases)', 
+    'HIV/AIDS (New Cases)', 'Leprosy (New Cases)', 'Nosocomial Infections (New Cases)', 
+    'Syphilis (New Cases)', 'Visceral Leishmaniasis (New Cases)', 'Neonatal Tetanus (New Cases)',
+    'Tuberculosis (New Cases)', 'Brucellosis (New cases)', 'Encephalitis (New Cases)',
+    'Meningitis (New Cases)', 'Rubella (Congenital Rubella Syndrome (CRS)) (New Cases)'
+]
+
 # Streamlit app title and description
 st.title("IDSRS Pakistan: Disease Outbreak Detection App")
 st.markdown("**A tool for early detection of disease outbreaks across Pakistani provinces using weekly surveillance data.**")
@@ -174,6 +183,12 @@ if st.button("🚨 Generate Outbreak Alerts", type="primary"):
         num_diseases = len(disease_cols)
         st.success(f"✅ Melted data: {long_new.shape[0]} records across {num_diseases} diseases.")
 
+        # Year-round override for priority diseases
+        year_round_mask = long_new['Disease'].isin(year_round_diseases)
+        long_new.loc[year_round_mask, 'Season'] = 'Year-Round'
+        if year_round_mask.sum() > 0:
+            st.info(f"ℹ️ Overrode {year_round_mask.sum()} records to Year-Round for priority diseases.")
+
         # Merge with thresholds
         if 'Season' not in threshold_df.columns:
             st.error("❌ Threshold file missing 'Season' column. Regenerate thresholds.")
@@ -197,12 +212,15 @@ if st.button("🚨 Generate Outbreak Alerts", type="primary"):
         )
 
         # Simple filter: non-normal alerts, with thresholds, excluding 'Other' + min cases=3
-        alerts = alerts[
-            (alerts['Alert_Level'] != 'Normal') & 
+        # For Year-Round: High Alert only; for Seasonal: Alert or High
+        base_filter = (
             alerts['Threshold_95'].notna() & 
             (~alerts['Disease'].str.contains('Other', na=False)) &
             (alerts['Cases'] >= 3)
-        ].copy()
+        )
+        year_round_filter = (alerts['Season'] == 'Year-Round') & (alerts['Alert_Level'] == 'High Alert') & base_filter
+        seasonal_filter = (alerts['Season'] != 'Year-Round') & (alerts['Alert_Level'] != 'Normal') & base_filter
+        alerts = alerts[year_round_filter | seasonal_filter].copy()
         alerts['District'] = alerts['Facility_ID'].str.split('_').str[2]
         alerts = alerts[['Facility_ID', 'District', 'Disease', 'Season', 'Cases', 'Mean', 'SD', 'Threshold_95', 'Threshold_99', 'Alert_Level', 'Deviation']]
 
@@ -219,13 +237,16 @@ if st.button("🚨 Generate Outbreak Alerts", type="primary"):
         # Summary metrics
         total_alerts = len(alerts)
         high_alerts = len(alerts[alerts['Alert_Level'] == 'High Alert'])
-        col_a, col_b = st.columns(2)
+        year_round_alerts_count = len(alerts[alerts['Season'] == 'Year-Round'])
+        col_a, col_b, col_c = st.columns(3)
         with col_a:
             st.metric("Total Alerts", total_alerts)
         with col_b:
             st.metric("High Alerts", high_alerts)
+        with col_c:
+            st.metric("Year-Round Alerts", year_round_alerts_count)
 
-        st.success(f"**{total_alerts} total alerts** generated based on seasonal thresholds.")
+        st.success(f"**{total_alerts} total alerts** generated based on seasonal thresholds (Year-Round: High Alert only).")
 
         st.markdown("### 📊 Outbreak Alerts (Sorted by Deviation)")
         st.dataframe(alerts.style.format({
@@ -267,9 +288,10 @@ with st.sidebar:
     st.header("🛠️ How It Works")
     st.markdown("""
     - **Simple Alerts**: Based on cases > Threshold_95 (Alert) or > Threshold_99 (High Alert) from historical data.
-    - **Filters**: ≥3 cases min; excludes 'Other'; seasonal matching.
+    - **Year-Round Priority**: For non-seasonal diseases (e.g., HIV, TB), overrides to Year-Round season and requires High Alert only.
+    - **Filters**: ≥3 cases min; excludes 'Other'.
     - **Prioritization**: Sorted by deviation from threshold.
-    - No weights, clustering, or dynamic multipliers—just straightforward threshold checks.
+    - No weights or complex multipliers—just straightforward threshold checks.
     """)
     st.markdown("---")
-    st.markdown("*Developed by Asad Khan* | *Version 2.0 (Simplified)*")
+    st.markdown("*Developed by Asad Khan* | *Version 2.1 (Simplified with Year-Round)*")
