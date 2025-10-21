@@ -19,7 +19,7 @@ def load_threshold_local(province):
         "Gilgit Baltistan": "GB.csv",
         "Islamabad": "ICT.csv",
         "Sindh": "Sindh.xlsx",
-        "KP": "seasonal_thresholds_kp.csv"
+        "KP": "seasonal_thresholds_kp.xlsx"
     }
     threshold_filename = province_files.get(province)
     if threshold_filename is None:
@@ -281,7 +281,7 @@ if st.button("Generate Alerts"):
 # Instructions
 st.sidebar.title("Instructions")
 st.sidebar.write("1. Select province.")
-st.sidebar.write("2. Ensure the corresponding threshold file is in the same folder as app.py (e.g., AJK.csv for AJK, ICT.csv for Islamabad, Sindh.xlsx for Sindh, seasonal_thresholds_kp.csv for KP).")
+st.sidebar.write("2. Ensure the corresponding threshold file is in the same folder as app.py (e.g., AJK.csv for AJK, ICT.csv for Islamabad, Sindh.xlsx for Sindh, seasonal_thresholds_kp.xlsx for KP).")
 st.sidebar.write("3. Upload weekly data (CSV/Excel).")
 st.sidebar.write("4. Adjust filters and click 'Generate Alerts'.")
 st.sidebar.write("5. View and download results (CSV).")
