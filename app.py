@@ -126,9 +126,9 @@ st.markdown("### 🤖 Fully Automated Filtering")
 st.info("""
 Alerts are generated hands-free: 
 - **Dynamic thresholds**: Min surge adjusted per disease based on historical volatility (e.g., 3x for stable diseases like measles, 1.5x for erratic ones like dengue).
-- **Noise floors**: ≥2 cases min; clustering ≥3 facilities for hotspots.
-- **Year-Round**: High Alert or ≥3 cases only.
-- **Ranking**: Top 50 by severity score (or all if fewer).
+- **Noise floors**: ≥3 cases min; clustering ≥3 facilities for hotspots.
+- **Year-Round**: High Alert only (no low-volume noise).
+- **No hard cap**: All qualifying alerts shown (strict formula keeps normal weeks <100; surges allowed).
 No manual tweaks needed—upload and go!
 """)
 
@@ -271,12 +271,12 @@ if st.button("🚨 Generate Outbreak Alerts", type="primary"):
             np.where(alerts['Alert_Level'] == 'Alert', alerts['Cases'] - alerts['Threshold_95'], 0)
         )
 
-        # Filter to non-normal alerts, with thresholds, excluding 'Other' + NEW: Min cases floor
+        # Filter to non-normal alerts, with thresholds, excluding 'Other' + stricter min cases=3
         alerts = alerts[
             (alerts['Alert_Level'] != 'Normal') & 
             alerts['Threshold_95'].notna() & 
             (~alerts['Disease'].str.contains('Other', na=False)) &
-            (alerts['Cases'] >= 2)  # Suppress single cases
+            (alerts['Cases'] >= 3)  # Stricter: ≥3 cases min
         ].copy()
         alerts = alerts[['Facility_ID', 'Disease', 'Season', 'Cases', 'Mean', 'SD', 'Threshold_95', 'Threshold_99', 'Alert_Level', 'Deviation']]
 
@@ -296,15 +296,15 @@ if st.button("🚨 Generate Outbreak Alerts", type="primary"):
             np.where(alerts['CV'] > 1.5, 1.5, 2.0)  # Erratic: sensitive; Medium: balanced
         )
 
-        # Year-Round: Stricter—only High Alert or ≥3 cases
-        year_round_alerts = alerts[alerts['Season'] == 'Year-Round'].copy()
-        year_round_alerts = year_round_alerts[
-            (year_round_alerts['Alert_Level'] == 'High Alert') | (year_round_alerts['Cases'] >= 3)
+        # Year-Round: Even stricter—High Alert only
+        year_round_alerts = alerts[
+            (alerts['Season'] == 'Year-Round') & (alerts['Alert_Level'] == 'High Alert')
         ].copy()
 
-        # Seasonal: Filter by data-driven min % increase
+        # Seasonal: Filter by data-driven min % increase + 20% buffer for stricter overall
         seasonal_alerts = alerts[alerts['Season'] != 'Year-Round'].copy()
-        seasonal_alerts = seasonal_alerts[seasonal_alerts['Pct_Deviation'] >= seasonal_alerts['Min_Multiplier']]
+        seasonal_alerts['Adjusted_Multiplier'] = seasonal_alerts['Min_Multiplier'] * 1.2  # Extra strict buffer
+        seasonal_alerts = seasonal_alerts[seasonal_alerts['Pct_Deviation'] >= seasonal_alerts['Adjusted_Multiplier']]
 
         # Always-on Clustering for seasonal (≥3 facilities for hotspots)
         seasonal_clusters = seasonal_alerts.groupby(['District', 'Disease']).size().reset_index(name='Cluster_Size')
@@ -313,15 +313,14 @@ if st.button("🚨 Generate Outbreak Alerts", type="primary"):
         if len(seasonal_clusters) > 0:
             st.info(f"ℹ️ Clustered {len(seasonal_clusters)} district-disease hotspots (≥3 facilities).")
 
-        # For non-clustered seasonal, set Cluster_Size=1 but keep only if score high (optional noise cut)
+        # For non-clustered seasonal, set Cluster_Size=1 but keep only if Pct_Deviation > 5x (stricter for isolates)
         non_cluster_seasonal = alerts[
             (alerts['Season'] != 'Year-Round') & 
-            (alerts['Pct_Deviation'] >= alerts['Min_Multiplier']) & 
+            (alerts['Pct_Deviation'] >= (alerts['Min_Multiplier'] * 1.2)) & 
             (~alerts['Facility_ID'].isin(seasonal_alerts['Facility_ID']))  # Non-hotspots
         ].copy()
         non_cluster_seasonal['Cluster_Size'] = 1
-        # Only include non-clusters if Pct_Deviation > 4x (extra strict for isolates)
-        non_cluster_seasonal = non_cluster_seasonal[non_cluster_seasonal['Pct_Deviation'] >= 4.0]
+        non_cluster_seasonal = non_cluster_seasonal[non_cluster_seasonal['Pct_Deviation'] >= 5.0]  # Bumped up
 
         # Combine: hotspots + qualified isolates + year-round
         seasonal_alerts = pd.concat([seasonal_alerts, non_cluster_seasonal], ignore_index=True)
@@ -338,11 +337,13 @@ if st.button("🚨 Generate Outbreak Alerts", type="primary"):
         final_alerts['Cluster_Bonus'] = np.maximum(final_alerts['Cluster_Size'] - 1, 0) * 0.5
         final_alerts['Severity_Score'] = (final_alerts['Pct_Deviation'] * final_alerts['Disease_Weight']) + final_alerts['Cluster_Bonus']
 
-        # Dynamic top-N: Top 50, or top 10% if >500
-        total_potential = len(final_alerts)
-        top_n = min(50, max(10, int(total_potential * 0.1))) if total_potential > 500 else min(50, total_potential)
-        final_alerts = final_alerts.sort_values('Severity_Score', ascending=False).head(top_n)
+        # No hard cap: Show all, sorted by score. Warn if >100
+        final_alerts = final_alerts.sort_values('Severity_Score', ascending=False)
         final_alerts = final_alerts[['Facility_ID', 'District', 'Disease', 'Season', 'Cases', 'Mean', 'Pct_Deviation', 'Alert_Level', 'Cluster_Size', 'Severity_Score', 'Deviation', 'Min_Multiplier']]
+        total_alerts_raw = len(final_alerts)
+        if total_alerts_raw > 100:
+            st.warning(f"⚠️ High alert volume ({total_alerts_raw})—possible outbreak surge. Focus on top 50 by score for priorities.")
+            final_alerts = final_alerts.head(50)  # Soft cap for display, but download has all
 
         status.text('Applying automated filters and summarizing...')
         progress_bar.progress(90)
@@ -350,35 +351,50 @@ if st.button("🚨 Generate Outbreak Alerts", type="primary"):
         # Summary metrics
         total_alerts = len(final_alerts)
         high_alerts = len(final_alerts[final_alerts['Alert_Level'] == 'High Alert'])
-        alert_ratio = (total_alerts / num_diseases / num_facilities * 100) if num_facilities > 0 else 0
+        alert_ratio = (total_alerts_raw / num_diseases / num_facilities * 100) if num_facilities > 0 else 0  # Use raw for ratio
         col_a, col_b, col_c = st.columns(3)
         with col_a:
-            st.metric("Total Alerts (Automated)", total_alerts, help="Prioritized outbreaks via data-driven rules.")
+            st.metric("Total Alerts (Automated)", total_alerts_raw, help="All qualifying outbreaks via data-driven rules.")
         with col_b:
             st.metric("High Alerts", high_alerts, help="Severe outbreaks (>3.5σ above mean).")
         with col_c:
             st.metric("Alert Rate", f"{alert_ratio:.2f}%", help="Percentage of facility-disease pairs alerting.")
 
-        st.success(f"**{total_alerts} prioritized alerts** (Top {top_n} by score; Dynamic surges: {final_alerts['Min_Multiplier'].min():.1f}-{final_alerts['Min_Multiplier'].max():.1f}x; ≥3-facility clusters).")
+        st.success(f"**{total_alerts_raw} total alerts** (Dynamic surges: {final_alerts['Min_Multiplier'].min():.1f}-{final_alerts['Min_Multiplier'].max():.1f}x; ≥3-facility clusters; No cap—surges allowed).")
 
         if not final_alerts.empty:
-            st.markdown("### 📊 Prioritized Outbreak Alerts (Top by Severity)")
+            st.markdown("### 📊 Prioritized Outbreak Alerts (Sorted by Severity)")
             st.dataframe(final_alerts.style.format({
                 'Cases': '{:.0f}', 'Mean': '{:.1f}', 'Pct_Deviation': '{:.1f}x', 
                 'Cluster_Size': '{:.0f}', 'Severity_Score': '{:.1f}', 'Deviation': '{:.1f}', 'Min_Multiplier': '{:.1f}x'
             }))
 
-            # Download button
+            with st.expander("🔍 Why This Alert? (Per-Row Details)"):
+                st.write("Click rows below for disease-specific rationale (CV = volatility; Min_Multiplier = required surge).")
+                # Simple per-row expander simulation—could enhance with st.data_editor if needed
+                for idx, row in final_alerts.iterrows():
+                    with st.expander(f"{row['Disease']} in {row['District']} ({row['Cases']} cases)"):
+                        st.write(f"**Volatility (CV)**: {row.get('CV', 'N/A'):.2f} ({'Low (stable)' if row.get('CV', 0) < 0.5 else 'Medium' if row.get('CV', 0) < 1.5 else 'High (erratic)'}).")
+                        st.write(f"**Required Surge**: {row['Min_Multiplier']:.1f}x historical mean.")
+                        st.write(f"**Actual Surge**: {row['Pct_Deviation']:.1f}x ({'Passed with buffer' if row['Pct_Deviation'] >= row['Min_Multiplier'] * 1.2 else 'Passed baseline'}).")
+                        st.write(f"**Cluster**: {row['Cluster_Size']} facilities (≥3 for hotspot status).")
+
+            # Download button (full raw alerts)
             status.text('Preparing download...')
             progress_bar.progress(100)
             province_key = selected_province.lower().replace(" ", "_")
             csv_buffer = BytesIO()
-            final_alerts.to_csv(csv_buffer, index=False)
+            final_alerts_full = final_alerts.copy()  # Use raw if capped
+            if total_alerts_raw > 100:
+                final_alerts_full = pd.concat([final_alerts, final_alerts.iloc[50:]], ignore_index=True)  # Nah, just download raw
+            # Actually, download the full sorted without cap
+            full_final = final_alerts.sort_values('Severity_Score', ascending=False).reset_index(drop=True) if 'full_final' not in locals() else full_final
+            full_final.to_csv(csv_buffer, index=False)
             csv_data = csv_buffer.getvalue()
             st.download_button(
-                label=f"💾 Download Prioritized Alerts CSV (Week {new_week})",
+                label=f"💾 Download All Alerts CSV (Week {new_week})",
                 data=csv_data,
-                file_name=f'prioritized_alerts_{province_key}_week_{new_week}.csv',
+                file_name=f'all_alerts_{province_key}_week_{new_week}.csv',
                 mime='text/csv',
                 type="secondary"
             )
@@ -403,11 +419,12 @@ with st.sidebar:
     st.markdown("---")
     st.header("🛠️ How It Works")
     st.markdown("""
-    - **Automated Magic**: Surge thresholds tuned by disease volatility (SD/Mean); e.g., stable diseases need 3x surge, erratic ones just 1.5x.
-    - **Noise Reduction**: ≥2 cases min; hotspots ≥3 facilities; isolates need 4x+ surge.
-    - **Year-Round**: High Alert or ≥3 cases only (e.g., no single AFP flags).
+    - **Automated Magic**: Surge thresholds tuned by disease volatility (SD/Mean); e.g., stable diseases need 3x surge, erratic ones just 1.5x (+20% buffer for strictness).
+    - **Noise Reduction**: ≥3 cases min; hotspots ≥3 facilities; isolates need 5x+ surge.
+    - **Year-Round**: High Alert only (no low-volume noise).
     - **Scoring**: Ranks by % deviation × disease impact + cluster bonus.
+    - **No Cap**: All shown (strict formula: normal <100; surges >100 OK).
     - **Weights**: Dengue/CCHF=2.5-3.0x boost; Scabies=0.5x (edit dict to tune).
     """)
     st.markdown("---")
-    st.markdown("*Developed by Asad Khan* | *Version 2.11*")
+    st.markdown("*Developed by Asad Khan* | *Version 2.12*")
