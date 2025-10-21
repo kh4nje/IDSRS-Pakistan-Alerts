@@ -18,7 +18,8 @@ def load_threshold_local(province):
         "Balochistan": "Balochistan.csv",
         "Gilgit Baltistan": "GB.csv",
         "Islamabad": "ICT.csv",
-        "Sindh": "Sindh.xlsx"
+        "Sindh": "Sindh.xlsx",
+        "KP": "seasonal_thresholds_kp.csv"
     }
     threshold_filename = province_files.get(province)
     if threshold_filename is None:
@@ -44,7 +45,7 @@ st.title("IDSRS Pakistan, Disease Outbreak Detection App for Provinces")
 
 
 # Province selection
-provinces = ["AJK", "Balochistan", "Gilgit Baltistan", "Islamabad", "Sindh"]
+provinces = ["AJK", "Balochistan", "Gilgit Baltistan", "Islamabad", "Sindh", "KP"]
 selected_province = st.selectbox("Select Province:", provinces, index=None)
 
 if selected_province is None:
@@ -267,9 +268,8 @@ if st.button("Generate Alerts"):
 # Instructions
 st.sidebar.title("Instructions")
 st.sidebar.write("1. Select province.")
-st.sidebar.write("2. Ensure the corresponding threshold file is in the same folder as app.py (e.g., AJK.csv for AJK, ICT.csv for Islamabad, Sindh.xlsx for Sindh).")
+st.sidebar.write("2. Ensure the corresponding threshold file is in the same folder as app.py (e.g., AJK.csv for AJK, ICT.csv for Islamabad, Sindh.xlsx for Sindh, seasonal_thresholds_kp.csv for KP).")
 st.sidebar.write("3. Upload weekly data (CSV/Excel).")
 st.sidebar.write("4. Adjust filters and click 'Generate Alerts'.")
 st.sidebar.write("5. View and download results (CSV).")
 st.sidebar.write("Developer: Asad khan")
-
