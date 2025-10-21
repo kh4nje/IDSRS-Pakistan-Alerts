@@ -272,7 +272,9 @@ if st.button("🚨 Generate Outbreak Alerts", type="primary"):
 
         if not final_alerts.empty:
             st.markdown("### 📊 Outbreak Alerts Table")
-            st.dataframe(final_alerts.style.format({'Cases': '{:.0f}', 'Mean': '{:.1f}', 'SD': '{:.1f}', 'Threshold_95': '{:.1f}', 'Threshold_99': '{:.1f}', 'Deviation': '{:.0f}'}).background_gradient(subset=['Deviation'], cmap='Reds'))
+            # FIXED: Simplified styling to avoid matplotlib dependency
+            styled_alerts = final_alerts.style.format({'Cases': '{:.0f}', 'Mean': '{:.1f}', 'SD': '{:.1f}', 'Threshold_95': '{:.1f}', 'Threshold_99': '{:.1f}', 'Deviation': '{:.0f}'})
+            st.dataframe(styled_alerts)
 
             # Download button
             status.text('Preparing download...')
@@ -316,4 +318,4 @@ with st.sidebar:
     - **No Matches?**: Check Facility_ID alignment or regenerate thresholds.
     """)
     st.markdown("---")
-    st.markdown("*Developed by Asad Khan* | *Version 2.1*")
+    st.markdown("*Developed by Asad Khan* | *Version 2.2*")
