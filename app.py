@@ -19,7 +19,7 @@ def load_threshold_local(province):
         "Gilgit Baltistan": "GB.csv",
         "Islamabad": "ICT.csv",
         "Sindh": "Sindh.xlsx",
-        "KP": "seasonal_thresholds_kp.xlsx"
+        "KP": "seasonal_thresholds_kp.csv"
     }
     threshold_filename = province_files.get(province)
     if threshold_filename is None:
@@ -93,19 +93,27 @@ if st.button("Generate Alerts"):
         columns_to_remove = ['periodid', 'periodcode', 'perioddescription', 'organisationunitid', 'organisationunitcode', 'organisationunitdescription']
         new_df = new_df.drop(columns=[col for col in columns_to_remove if col in new_df.columns])
 
-        # Org levels and Facility_ID
-        org_cols = ['orgunitlevel1', 'orgunitlevel2', 'orgunitlevel3', 'orgunitlevel4', 'orgunitlevel5', 'organisationunitname']
+        # FIXED: Dynamic Org levels and Facility_ID (handles level6 for KP, up to 5 for others)
+        org_level_cols = [col for col in new_df.columns if col.startswith('orgunitlevel')]
+        org_level_cols.sort(key=lambda x: int(x.replace('orgunitlevel', '')))  # Sort by level
+        org_cols = org_level_cols + ['organisationunitname']
         for col in org_cols:
             if col in new_df.columns:
                 new_df[col] = new_df[col].fillna('Unknown').astype(str)
-        if all(col in new_df.columns for col in org_cols):
-            new_df['Facility_ID'] = (new_df['orgunitlevel1'] + '_' + new_df['orgunitlevel2'] + '_' + 
-                                     new_df['orgunitlevel3'] + '_' + new_df['orgunitlevel4'] + '_' + 
-                                     new_df['orgunitlevel5'] + '_' + new_df['organisationunitname'])
-            st.write(f"Unique Facility_IDs: {new_df['Facility_ID'].nunique()}")
+        if len(org_level_cols) > 0 and 'organisationunitname' in new_df.columns:
+            new_df['Facility_ID'] = new_df[org_cols].apply(lambda row: '_'.join(row.values.astype(str)), axis=1)
+            st.write(f"Unique Facility_IDs in weekly data: {new_df['Facility_ID'].nunique()}")
+            # Debug: Show sample Facility_IDs
+            st.write("Sample Facility_IDs:", new_df['Facility_ID'].unique()[:3].tolist())
         else:
-            st.error("Missing required org columns.")
+            st.error("Missing org level columns or organisationunitname.")
             st.stop()
+
+        # Debug: Check threshold Facility_IDs for overlap
+        sample_thresh_ids = threshold_df['Facility_ID'].unique()[:3].tolist()
+        st.write(f"Sample Facility_IDs in thresholds: {sample_thresh_ids}")
+        overlap = set(new_df['Facility_ID']) & set(threshold_df['Facility_ID'])
+        st.write(f"Facility_ID overlap count: {len(overlap)} / {min(len(new_df['Facility_ID'].unique()), len(threshold_df['Facility_ID'].unique()))}")
 
         status.text('Parsing week and season...')
         progress_bar.progress(50)
@@ -198,7 +206,12 @@ if st.button("Generate Alerts"):
             st.error("Threshold file does not have 'Season' column. Please check the file structure.")
             st.stop()
         filtered_thresholds = threshold_df[threshold_df['Season'].isin([current_season, 'Year-Round'])]
+        st.write(f"Filtered thresholds shape: {filtered_thresholds.shape}")
         alerts = long_new.merge(filtered_thresholds[['Facility_ID', 'Disease', 'Season', 'Threshold_95', 'Threshold_99', 'Mean', 'SD']], how='left')
+
+        # Debug: Check merge success
+        merged_count = alerts['Threshold_95'].notna().sum()
+        st.write(f"Merges with thresholds: {merged_count} / {len(alerts)}")
 
         alerts['Alert_Level'] = np.where(
             (alerts['Cases'] > alerts['Threshold_99']) & alerts['Threshold_99'].notna(), 'High Alert',
@@ -273,4 +286,3 @@ st.sidebar.write("3. Upload weekly data (CSV/Excel).")
 st.sidebar.write("4. Adjust filters and click 'Generate Alerts'.")
 st.sidebar.write("5. View and download results (CSV).")
 st.sidebar.write("Developer: Asad khan")
-
