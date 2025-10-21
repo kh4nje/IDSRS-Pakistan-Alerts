@@ -194,10 +194,17 @@ if st.button("🚨 Generate Outbreak Alerts", type="primary"):
             "Acute Flaccid Paralysis (New Cases)"
         ]
 
+        # Fill missing thresholds for high-priority diseases with defaults (expected 0 cases)
+        is_high_priority = alerts['Disease'].isin(high_priority_diseases)
+        mask_missing = is_high_priority & alerts['Threshold_95'].isna()
+        alerts.loc[mask_missing, 'Threshold_95'] = 0
+        alerts.loc[mask_missing, 'Threshold_99'] = 1  # >1 case for High Alert
+        alerts.loc[mask_missing, 'Mean'] = 0
+        alerts.loc[mask_missing, 'SD'] = 0
+
         # Initialize Alert_Level to Normal
         alerts['Alert_Level'] = 'Normal'
 
-        is_high_priority = alerts['Disease'].isin(high_priority_diseases)
         has_valid_threshold = alerts['Threshold_95'].notna()
 
         # For high-priority (year-round): Alert if Cases >=1 and valid threshold
@@ -295,11 +302,11 @@ with st.sidebar:
     st.header("🛠️ How It Works")
     st.markdown("""
     - **Seasonal Diseases**: Alert if >1 case + > Threshold_95 (Alert) or > Threshold_99 (High Alert).
-    - **Year-Round/High-Priority Diseases** (e.g., CCHF, Anthrax): Alert on >=1 case (expected 0 cases).
+    - **Year-Round/High-Priority Diseases** (e.g., CCHF, Anthrax): Alert on 1 case; High Alert on >1 case (defaults if no seasonal threshold match).
     - **Deviation**: Cases for year-round; from threshold for seasonal.
-    - **Filters**: Excludes 1-case seasonal alerts and zero/negative deviations.
+    - **Filters**: Excludes 1-case seasonal alerts, zero/negative deviations, and invalid thresholds.
     - **Prioritization**: Sorted by deviation.
     - Fully automated—no tweaks needed.
     """)
     st.markdown("---")
-    st.markdown("*Developed by Asad Khan* | *Simplified Multi-Province v1.1*")
+    st.markdown("*Developed by Asad Khan* | *Simplified Multi-Province v1.2*")
