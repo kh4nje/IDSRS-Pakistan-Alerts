@@ -339,7 +339,7 @@ if st.button("🚨 Generate Outbreak Alerts", type="primary"):
 
         # No hard cap: Show all, sorted by score. Warn if >100
         final_alerts = final_alerts.sort_values('Severity_Score', ascending=False)
-        final_alerts = final_alerts[['Facility_ID', 'District', 'Disease', 'Season', 'Cases', 'Mean', 'Pct_Deviation', 'Alert_Level', 'Cluster_Size', 'Severity_Score', 'Deviation', 'Min_Multiplier']]
+        final_alerts = final_alerts[['Facility_ID', 'District', 'Disease', 'Season', 'Cases', 'Mean', 'CV', 'Pct_Deviation', 'Alert_Level', 'Cluster_Size', 'Severity_Score', 'Deviation', 'Min_Multiplier']]
         total_alerts_raw = len(final_alerts)
         if total_alerts_raw > 100:
             st.warning(f"⚠️ High alert volume ({total_alerts_raw})—possible outbreak surge. Focus on top 50 by score for priorities.")
@@ -365,7 +365,7 @@ if st.button("🚨 Generate Outbreak Alerts", type="primary"):
         if not final_alerts.empty:
             st.markdown("### 📊 Prioritized Outbreak Alerts (Sorted by Severity)")
             st.dataframe(final_alerts.style.format({
-                'Cases': '{:.0f}', 'Mean': '{:.1f}', 'Pct_Deviation': '{:.1f}x', 
+                'Cases': '{:.0f}', 'Mean': '{:.1f}', 'CV': '{:.2f}', 'Pct_Deviation': '{:.1f}x', 
                 'Cluster_Size': '{:.0f}', 'Severity_Score': '{:.1f}', 'Deviation': '{:.1f}', 'Min_Multiplier': '{:.1f}x'
             }))
 
@@ -374,7 +374,9 @@ if st.button("🚨 Generate Outbreak Alerts", type="primary"):
                 # Simple per-row expander simulation—could enhance with st.data_editor if needed
                 for idx, row in final_alerts.iterrows():
                     with st.expander(f"{row['Disease']} in {row['District']} ({row['Cases']} cases)"):
-                        st.write(f"**Volatility (CV)**: {row.get('CV', 'N/A'):.2f} ({'Low (stable)' if row.get('CV', 0) < 0.5 else 'Medium' if row.get('CV', 0) < 1.5 else 'High (erratic)'}).")
+                        cv_val = row.get('CV', np.nan)
+                        cv_desc = 'Low (stable)' if pd.notna(cv_val) and cv_val < 0.5 else 'Medium' if pd.notna(cv_val) and cv_val < 1.5 else 'High (erratic)'
+                        st.write(f"**Volatility (CV)**: {cv_val:.2f if pd.notna(cv_val) else 'N/A'} ({cv_desc}).")
                         st.write(f"**Required Surge**: {row['Min_Multiplier']:.1f}x historical mean.")
                         st.write(f"**Actual Surge**: {row['Pct_Deviation']:.1f}x ({'Passed with buffer' if row['Pct_Deviation'] >= row['Min_Multiplier'] * 1.2 else 'Passed baseline'}).")
                         st.write(f"**Cluster**: {row['Cluster_Size']} facilities (≥3 for hotspot status).")
