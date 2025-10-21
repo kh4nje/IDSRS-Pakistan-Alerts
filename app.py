@@ -18,8 +18,7 @@ def load_threshold_local(province):
         "Balochistan": "Balochistan.csv",
         "Gilgit Baltistan": "GB.csv",
         "Islamabad": "ICT.csv",
-        "Sindh": "Sindh.xlsx",
-        "KP": "seasonal_thresholds_kp.xlsx"
+        "Sindh": "Sindh.xlsx"
     }
     threshold_filename = province_files.get(province)
     if threshold_filename is None:
@@ -40,32 +39,12 @@ def load_threshold_local(province):
         st.error(f"Failed to load local threshold file '{threshold_filename}': {e}. Please ensure the file exists in the same folder as app.py.")
         st.stop()
 
-# Year-round diseases (priority, non-seasonal: stricter High Alert only)
-year_round_diseases = [
-    'Acute Flaccid Paralysis (New Cases)', 'Botulism (New Cases)', 'Gonorrhea (New Cases)', 
-    'HIV/AIDS (New Cases)', 'Leprosy (New Cases)', 'Nosocomial Infections (New Cases)', 
-    'Syphilis (New Cases)', 'Visceral Leishmaniasis (New Cases)', 'Neonatal Tetanus (New Cases)',
-    'Tuberculosis (New Cases)', 'Brucellosis (New cases)', 'Encephalitis (New Cases)',
-    'Meningitis (New Cases)', 'Rubella (Congenital Rubella Syndrome (CRS)) (New Cases)'
-]
+# Streamlit app title
+st.title("IDSRS Pakistan, Disease Outbreak Detection App for Provinces")
 
-# High-priority diseases (1-case alerts: Core critical ones like CCHF, DHF, etc.)
-high_priority_diseases = [
-    'Crimean Congo Hemorrhagic Fever (New Cases)', 'Dengue Hemorrhagic Fever (New Cases)',
-    'Severe Acute Respiratory Infection (New Cases)', 'Measles (New Cases)',
-    'Pertussis (New cases)', 'Diphtheria (Probable) (New Cases)', 'Neonatal Tetanus (New Cases)',
-    'Acute Flaccid Paralysis (New Cases)'
-]
-
-# Priority diseases: Union of high-priority and year-round
-priority_diseases = list(set(high_priority_diseases + year_round_diseases))
-
-# Streamlit app title and description
-st.title("IDSRS Pakistan: Disease Outbreak Detection App")
-st.markdown("**A tool for early detection of disease outbreaks across Pakistani provinces using weekly surveillance data.**")
 
 # Province selection
-provinces = ["AJK", "Balochistan", "Gilgit Baltistan", "Islamabad", "Sindh", "KP"]
+provinces = ["AJK", "Balochistan", "Gilgit Baltistan", "Islamabad", "Sindh"]
 selected_province = st.selectbox("Select Province:", provinces, index=None)
 
 if selected_province is None:
@@ -80,51 +59,61 @@ status.text('Initializing...')
 progress_bar.progress(10)
 
 threshold_df = load_threshold_local(selected_province)
-st.success(f"✅ Threshold file loaded for {selected_province}.")
+st.success(f"Threshold file loaded for {selected_province} from local.")
 progress_bar.progress(30)
 
 # Upload new week file (weekly data)
-new_file = st.file_uploader("📁 Upload this week's surveillance data (CSV or Excel)", type=['xlsx', 'csv'], help="Upload the weekly export from DHIS2 containing periodname, org levels, and disease columns.")
+new_file = st.file_uploader("Upload new week data (CSV or Excel)", type=['xlsx', 'csv'])
 
-if new_file is None:
-    st.info("👆 Please upload your weekly data file to generate alerts.")
-    st.stop()
+# Priority diseases
+priority_diseases = [
+    "Crimean Congo Hemorrhagic Fever (New Cases)",
+    "Anthrax (New Cases)",
+    "Botulism (New Cases)",
+    "Diphtheria (Probable) (New Cases)",
+    "Neonatal Tetanus (New Cases)",
+    "Acute Flaccid Paralysis (New Cases)"
+]
+selected_priority_diseases = st.multiselect(
+    "Select priority diseases to always include:",
+    options=priority_diseases,
+    default=priority_diseases
+)
 
 # Run button
-if st.button("🚨 Generate Outbreak Alerts", type="primary"):
-    if threshold_df is not None:
-        status.text('Loading weekly data...')
+if st.button("Generate Alerts"):
+    if threshold_df is not None and new_file is not None:
+        status.text('Loading new week data...')
         progress_bar.progress(40)
         new_df = load_file(new_file)
-        st.success(f"✅ Weekly data loaded. Shape: {new_df.shape[0]} rows x {new_df.shape[1]} columns.")
+        st.write("New week data loaded. Shape:", new_df.shape)
 
         # Remove unnecessary columns
         columns_to_remove = ['periodid', 'periodcode', 'perioddescription', 'organisationunitid', 'organisationunitcode', 'organisationunitdescription']
         new_df = new_df.drop(columns=[col for col in columns_to_remove if col in new_df.columns])
 
-        # Dynamic Org levels and Facility_ID (handles variations across provinces)
-        org_level_cols = [col for col in new_df.columns if col.startswith('orgunitlevel')]
-        org_level_cols.sort(key=lambda x: int(x.replace('orgunitlevel', '')))  # Sort by level
-        org_cols = org_level_cols + ['organisationunitname']
+        # Org levels and Facility_ID
+        org_cols = ['orgunitlevel1', 'orgunitlevel2', 'orgunitlevel3', 'orgunitlevel4', 'orgunitlevel5', 'organisationunitname']
         for col in org_cols:
             if col in new_df.columns:
                 new_df[col] = new_df[col].fillna('Unknown').astype(str)
-        if len(org_level_cols) > 0 and 'organisationunitname' in new_df.columns:
-            new_df['Facility_ID'] = new_df[org_cols].apply(lambda row: '_'.join(row.values.astype(str)), axis=1)
-            num_facilities = new_df['Facility_ID'].nunique()
-            st.success(f"✅ Processed {num_facilities} health facilities.")
+        if all(col in new_df.columns for col in org_cols):
+            new_df['Facility_ID'] = (new_df['orgunitlevel1'] + '_' + new_df['orgunitlevel2'] + '_' + 
+                                     new_df['orgunitlevel3'] + '_' + new_df['orgunitlevel4'] + '_' + 
+                                     new_df['orgunitlevel5'] + '_' + new_df['organisationunitname'])
+            st.write(f"Unique Facility_IDs: {new_df['Facility_ID'].nunique()}")
         else:
-            st.error("❌ Missing organizational columns (e.g., orgunitlevel1-5 or organisationunitname). Check your data export.")
+            st.error("Missing required org columns.")
             st.stop()
 
         status.text('Parsing week and season...')
         progress_bar.progress(50)
-        # Parse periodname (handles KP/Sindh formats)
+        # Parse periodname (prioritize KP-like "Week X YYYY..." pattern)
         if 'periodname' in new_df.columns:
             new_df['periodname'] = new_df['periodname'].astype(str).str.strip()
             patterns = [
-                r'Week (\d+) (\d{4})-\d{2}-\d{2} - \d{4}-\d{2}-\d{2}',  # KP/Sindh format
-                r'(\d{4})W(\d{1,2})',  # Sindh W1 fallback
+                r'Week (\d+) (\d{4})-\d{2}-\d{2} - \d{4}-\d{2}-\d{2}',  # KP/Sindh format first
+                r'(\d{4})W(\d{1,2})',  # W1 fallback
             ]
             best_extracted = None
             for pat in patterns:
@@ -137,29 +126,31 @@ if st.button("🚨 Generate Outbreak Alerts", type="primary"):
                     success = extracted.notna().all(axis=1).sum()
                     if success > 0:
                         best_extracted = extracted
+                        st.write(f"Matched pattern with {success} rows.")
                         break
             if best_extracted is not None:
-                # Drop old Year/Week if exist
-                for col in ['Year', 'Week']:
-                    if col in new_df.columns:
-                        new_df = new_df.drop(columns=[col])
+                # Drop old Year/Week if exist to avoid conflict
+                if 'Year' in new_df.columns:
+                    new_df = new_df.drop(columns=['Year'])
+                if 'Week' in new_df.columns:
+                    new_df = new_df.drop(columns=['Week'])
                 new_df = pd.concat([new_df, best_extracted], axis=1)
                 new_df['Year'] = pd.to_numeric(new_df['Year'], errors='coerce')
                 new_df['Week'] = pd.to_numeric(new_df['Week'], errors='coerce')
                 new_df = new_df.dropna(subset=['Year', 'Week'])
                 if new_df.empty:
-                    st.error("❌ No valid weeks parsed. Check 'periodname' format (e.g., 'Week 40 2025-10-01 - 2025-10-07').")
+                    st.error("No valid weeks parsed after dropna.")
                     st.stop()
                 new_week = new_df['Week'].iloc[0]
-                st.success(f"✅ Parsed Week {new_week} of {new_df['Year'].iloc[0]}.")
+                st.write(f"Parsed Week: {new_week}")
             else:
-                st.error("❌ No pattern matched 'periodname'. Ensure format is 'Week X YYYY-MM-DD - YYYY-MM-DD' or 'YYYYW#'.")
+                st.error("No pattern matched periodname. Check format (e.g., 'Week 40 2025-...').")
                 st.stop()
         else:
-            st.error("❌ No 'periodname' column found. Include it in your DHIS2 export.")
+            st.error("No 'periodname' column.")
             st.stop()
 
-        # Assign season
+        # Season
         def assign_season(week):
             if pd.isna(week):
                 return 'Unknown'
@@ -174,122 +165,98 @@ if st.button("🚨 Generate Outbreak Alerts", type="primary"):
                 return 'Winter'
 
         new_df['Season'] = new_df['Week'].apply(assign_season)
-        current_season = new_df['Season'].iloc[0]
-        st.success(f"✅ Assigned Season: {current_season}")
+        st.write(f"Season: {new_df['Season'].iloc[0]}")
 
-        status.text('Processing diseases and generating alerts...')
+        status.text('Melting and merging data...')
         progress_bar.progress(70)
         # Disease columns and melt
         disease_cols = [col for col in new_df.columns if '(New Cases)' in col or '(New cases)' in col]
         if len(disease_cols) == 0:
-            st.error("❌ No disease columns found (e.g., '(New Cases)'). Check your data export.")
+            st.error("No disease columns found.")
             st.stop()
-        # Fill NaNs with 0 for weekly data (as it's current reporting)
         new_df[disease_cols] = new_df[disease_cols].fillna(0).astype(int)
+        # Check if DF is non-empty before melt
         if new_df.empty:
-            st.error("❌ DataFrame is empty after parsing.")
+            st.error("DataFrame is empty after parsing—cannot melt.")
             st.stop()
         long_new = pd.melt(new_df, id_vars=['Facility_ID', 'Season'], value_vars=disease_cols, var_name='Disease', value_name='Cases')
         long_new['Cases'] = long_new['Cases'].astype(int)
-        num_diseases = len(disease_cols)
-        st.success(f"✅ Melted data: {long_new.shape[0]} records across {num_diseases} diseases.")
+        st.write("Melted data shape:", long_new.shape)
 
-        # Year-round override for priority diseases
-        year_round_mask = long_new['Disease'].isin(year_round_diseases)
-        long_new.loc[year_round_mask, 'Season'] = 'Year-Round'
-        if year_round_mask.sum() > 0:
-            st.info(f"ℹ️ Overrode {year_round_mask.sum()} records to Year-Round for priority diseases.")
+        # Year-round override
+        year_round_diseases = [
+            'Acute Flaccid Paralysis (New Cases)', 'Botulism (New Cases)', 'Gonorrhea (New Cases)', 
+            'HIV/AIDS (New Cases)', 'Leprosy (New Cases)', 'Nosocomial Infections (New Cases)', 
+            'Syphilis (New Cases)', 'Visceral Leishmaniasis (New Cases)', 'Neonatal Tetanus (New Cases)'
+        ]
+        long_new.loc[long_new['Disease'].isin(year_round_diseases), 'Season'] = 'Year-Round'
 
-        # Merge with thresholds
+        # Filter thresholds for speed
+        current_season = new_df['Season'].iloc[0]
         if 'Season' not in threshold_df.columns:
-            st.error("❌ Threshold file missing 'Season' column. Regenerate thresholds.")
+            st.error("Threshold file does not have 'Season' column. Please check the file structure.")
             st.stop()
         filtered_thresholds = threshold_df[threshold_df['Season'].isin([current_season, 'Year-Round'])]
-        alerts = long_new.merge(
-            filtered_thresholds[['Facility_ID', 'Disease', 'Season', 'Threshold_95', 'Threshold_99', 'Mean', 'SD']], 
-            how='left'
-        )
+        alerts = long_new.merge(filtered_thresholds[['Facility_ID', 'Disease', 'Season', 'Threshold_95', 'Threshold_99', 'Mean', 'SD']], how='left')
 
-        # For high-priority diseases, set missing thresholds to 0 to enable 1-case alerts
-        priority_mask = alerts['Disease'].isin(priority_diseases)
-        alerts.loc[priority_mask & alerts['Threshold_95'].isna(), 'Threshold_95'] = 0
-        alerts.loc[priority_mask & alerts['Threshold_99'].isna(), 'Threshold_99'] = 0
-
-        # Generate alert levels
         alerts['Alert_Level'] = np.where(
             (alerts['Cases'] > alerts['Threshold_99']) & alerts['Threshold_99'].notna(), 'High Alert',
             np.where(
                 (alerts['Cases'] > alerts['Threshold_95']) & alerts['Threshold_95'].notna(), 'Alert', 'Normal'
             )
         )
-        # Old Deviation formula: 95 for Alert, 99 for High
         alerts['Deviation'] = np.where(
             alerts['Alert_Level'] == 'High Alert', alerts['Cases'] - alerts['Threshold_99'],
             np.where(alerts['Alert_Level'] == 'Alert', alerts['Cases'] - alerts['Threshold_95'], 0)
         )
 
-        # Simple filter: non-normal alerts, with thresholds, excluding 'Other'
-        # Min cases: 1 for priority, 3 for others
-        is_priority = alerts['Disease'].isin(priority_diseases)
-        alerts['Min_Cases'] = np.where(is_priority, 1, 3)
-        base_filter = (
-            (alerts['Cases'] >= alerts['Min_Cases']) & 
-            alerts['Threshold_95'].notna() & 
-            (~alerts['Disease'].str.contains('Other', na=False))
-        )
-        # For Seasonal (non-year-round, non-priority): High Alert only
-        # For Priority: Alert or High (old formula)
-        # Year-Round subset of priority: High Alert only (as before)
-        seasonal_non_priority_filter = (~is_priority & (alerts['Season'] != 'Year-Round') & (alerts['Alert_Level'] == 'High Alert')) & base_filter
-        priority_filter = is_priority & (alerts['Alert_Level'] != 'Normal') & base_filter
-        alerts = alerts[seasonal_non_priority_filter | priority_filter].copy()
-        alerts['District'] = alerts['Facility_ID'].str.split('_').str[2]
-        alerts = alerts[['Facility_ID', 'District', 'Disease', 'Season', 'Cases', 'Mean', 'SD', 'Threshold_95', 'Threshold_99', 'Alert_Level', 'Deviation', 'Min_Cases']]
+        # Filter alerts
+        alerts = alerts[(alerts['Alert_Level'] != 'Normal') & 
+                        alerts['Threshold_95'].notna() & 
+                        (~alerts['Disease'].str.contains('Other', na=False))].copy()
+        alerts = alerts[['Facility_ID', 'Disease', 'Season', 'Cases', 'Mean', 'SD', 'Threshold_95', 'Threshold_99', 'Alert_Level', 'Deviation']]
 
-        if alerts.empty:
-            st.warning("No alerts detected this week—surveillance levels are normal. Monitor trends closely.")
-            st.stop()
-
-        # Sort by Deviation descending for simple prioritization
-        alerts = alerts.sort_values('Deviation', ascending=False)
-
-        status.text('Applying filters and summarizing...')
+        status.text('Filtering alerts...')
         progress_bar.progress(90)
+        # Priority filtering
+        priority_alerts = alerts[alerts['Disease'].isin(selected_priority_diseases)]
+        non_priority_alerts = alerts[~alerts['Disease'].isin(selected_priority_diseases)]
+        st.write(f"Priority alerts count: {len(priority_alerts)}, Non-priority alerts count: {len(non_priority_alerts)}")  # Debug line - remove if not needed
+        
+        # Conditionally render sliders only if non-priority alerts exist
+        if len(non_priority_alerts) > 0:
+            col1, col2 = st.columns(2)
+            with col1:
+                top_n = st.slider("Top N Non-Priority Alerts", min_value=0, max_value=len(non_priority_alerts), value=min(50, len(non_priority_alerts)))
+            with col2:
+                max_dev = non_priority_alerts['Deviation'].max()
+                min_dev = st.slider("Min Deviation for Non-Priority", min_value=0.0, max_value=max_dev, value=0.0)
+        else:
+            top_n = 0
+            min_dev = 0.0
+        
+        filtered_non_priority = non_priority_alerts[(non_priority_alerts['Deviation'] >= min_dev)].head(top_n)
+        final_alerts = pd.concat([priority_alerts, filtered_non_priority], ignore_index=True)
+        final_alerts = final_alerts.sort_values('Deviation', ascending=False)
 
-        # Summary metrics
-        total_alerts = len(alerts)
-        high_alerts = len(alerts[alerts['Alert_Level'] == 'High Alert'])
-        priority_alerts_count = len(alerts[is_priority])
-        col_a, col_b, col_c = st.columns(3)
-        with col_a:
-            st.metric("Total Alerts", total_alerts)
-        with col_b:
-            st.metric("High Alerts", high_alerts)
-        with col_c:
-            st.metric("Priority Alerts", priority_alerts_count)
+        st.write(f"Total alerts for {selected_province}: {len(final_alerts)} ({len(priority_alerts)} priority + {len(filtered_non_priority)} filtered)")
 
-        st.success(f"**{total_alerts} total alerts** (Seasonal non-priority: High Alert only; Priorities: Alert/High; Year-Round: High Alert).")
+        if not final_alerts.empty:
+            st.dataframe(final_alerts)
 
-        st.markdown("### 📊 Outbreak Alerts (Sorted by Deviation)")
-        st.dataframe(alerts.style.format({
-            'Cases': '{:.0f}', 'Mean': '{:.1f}', 'SD': '{:.1f}', 
-            'Threshold_95': '{:.1f}', 'Threshold_99': '{:.1f}', 'Deviation': '{:.1f}', 'Min_Cases': '{:.0f}'
-        }))
-
-        # Download button
-        status.text('Preparing download...')
-        progress_bar.progress(100)
-        province_key = selected_province.lower().replace(" ", "_")
-        csv_buffer = BytesIO()
-        alerts.to_csv(csv_buffer, index=False)
-        csv_data = csv_buffer.getvalue()
-        st.download_button(
-            label=f"💾 Download Alerts CSV (Week {new_week})",
-            data=csv_data,
-            file_name=f'alerts_{province_key}_week_{new_week}.csv',
-            mime='text/csv',
-            type="secondary"
-        )
+            # Download as CSV to avoid openpyxl dependency
+            status.text('Preparing download...')
+            progress_bar.progress(100)
+            province_key = selected_province.lower().replace(" ", "_")
+            csv = final_alerts.to_csv(index=False).encode('utf-8')
+            st.download_button(
+                label=f"Download Alerts for {selected_province} Week {new_week} (CSV)",
+                data=csv,
+                file_name=f'alerts_{province_key}_week_{new_week}.csv',
+                mime='text/csv'
+            )
+        else:
+            st.warning("No alerts generated.")
 
     else:
         st.warning("Upload weekly data to generate alerts.")
@@ -297,26 +264,12 @@ if st.button("🚨 Generate Outbreak Alerts", type="primary"):
     progress_bar.empty()
     status.empty()
 
-# Sidebar with instructions and tips
-with st.sidebar:
-    st.header("📖 Quick Guide")
-    st.markdown("""
-    1. **Select Province**: Choose from the dropdown.
-    2. **Threshold File**: Ensure the matching file is in your app folder (e.g., `seasonal_thresholds_kp.xlsx` for KP).
-    3. **Upload Data**: Weekly DHIS2 export with `periodname`, org levels, and `(New Cases)` columns.
-    4. **Generate**: Click the button to get basic alerts.
-    """)
-    st.markdown("---")
-    st.header("🛠️ How It Works")
-    st.markdown("""
-    - **Alerts**: > Threshold_95 (Alert) or > Threshold_99 (High Alert).
-    - **Seasonal Non-Priority**: High Alert only (stricter).
-    - **Priority Diseases**: Alert or High (old formula, sensitive; ≥1 case).
-    - **Year-Round (subset of priority)**: High Alert only.
-    - **Deviation**: Old formula (from 95th for Alert, 99th for High).
-    - **Filters**: Excludes 'Other'; min cases per category.
-    - **Prioritization**: Sorted by deviation.
-    - No weights or complex multipliers—just straightforward threshold checks.
-    """)
-    st.markdown("---")
-    st.markdown("*Developed by Asad Khan* | *Version 2.5 (Stricter Seasonal + Old Priority)*")
+# Instructions
+st.sidebar.title("Instructions")
+st.sidebar.write("1. Select province.")
+st.sidebar.write("2. Ensure the corresponding threshold file is in the same folder as app.py (e.g., AJK.csv for AJK, ICT.csv for Islamabad, Sindh.xlsx for Sindh).")
+st.sidebar.write("3. Upload weekly data (CSV/Excel).")
+st.sidebar.write("4. Adjust filters and click 'Generate Alerts'.")
+st.sidebar.write("5. View and download results (CSV).")
+st.sidebar.write("Developer: Asad khan")
+
