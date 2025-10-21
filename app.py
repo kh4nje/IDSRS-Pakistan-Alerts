@@ -49,13 +49,13 @@ year_round_diseases = [
     'Meningitis (New Cases)', 'Rubella (Congenital Rubella Syndrome (CRS)) (New Cases)'
 ]
 
-# High-priority diseases (1-case alerts: CCHF, DHF, SARI, Measles, etc.)
+# High-priority diseases (1-case alerts: Core critical ones like CCHF, DHF, etc.)
 high_priority_diseases = [
     'Crimean Congo Hemorrhagic Fever (New Cases)', 'Dengue Hemorrhagic Fever (New Cases)',
     'Severe Acute Respiratory Infection (New Cases)', 'Measles (New Cases)',
     'Pertussis (New cases)', 'Diphtheria (Probable) (New Cases)', 'Neonatal Tetanus (New Cases)',
-    'Acute Flaccid Paralysis (New Cases)'  # Overlaps with year-round
-] + year_round_diseases  # Combine to cover all
+    'Acute Flaccid Paralysis (New Cases)'
+]
 
 # Streamlit app title and description
 st.title("IDSRS Pakistan: Disease Outbreak Detection App")
@@ -311,4 +311,4 @@ with st.sidebar:
     - No weights or complex multipliers—just straightforward threshold checks.
     """)
     st.markdown("---")
-    st.markdown("*Developed by Asad Khan* | *Version 2.2 (With 1-Case Priorities)*")
+    st.markdown("*Developed by Asad Khan* | *Version 2.3 (Shortened Priorities)*")
