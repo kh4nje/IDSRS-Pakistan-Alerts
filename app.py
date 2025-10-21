@@ -375,8 +375,18 @@ if st.button("🚨 Generate Outbreak Alerts", type="primary"):
                 for idx, row in final_alerts.iterrows():
                     with st.expander(f"{row['Disease']} in {row['District']} ({row['Cases']} cases)"):
                         cv_val = row.get('CV', np.nan)
-                        cv_desc = 'Low (stable)' if pd.notna(cv_val) and cv_val < 0.5 else 'Medium' if pd.notna(cv_val) and cv_val < 1.5 else 'High (erratic)'
-                        st.write(f"**Volatility (CV)**: {cv_val:.2f if pd.notna(cv_val) else 'N/A'} ({cv_desc}).")
+                        if pd.notna(cv_val):
+                            formatted_cv = f"{cv_val:.2f}"
+                            if cv_val < 0.5:
+                                cv_desc = 'Low (stable)'
+                            elif cv_val < 1.5:
+                                cv_desc = 'Medium'
+                            else:
+                                cv_desc = 'High (erratic)'
+                        else:
+                            formatted_cv = 'N/A'
+                            cv_desc = 'N/A'
+                        st.write(f"**Volatility (CV)**: {formatted_cv} ({cv_desc}).")
                         st.write(f"**Required Surge**: {row['Min_Multiplier']:.1f}x historical mean.")
                         st.write(f"**Actual Surge**: {row['Pct_Deviation']:.1f}x ({'Passed with buffer' if row['Pct_Deviation'] >= row['Min_Multiplier'] * 1.2 else 'Passed baseline'}).")
                         st.write(f"**Cluster**: {row['Cluster_Size']} facilities (≥3 for hotspot status).")
