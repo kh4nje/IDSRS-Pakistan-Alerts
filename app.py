@@ -174,17 +174,74 @@ if st.button("🚨 Generate Outbreak Alerts", type="primary"):
         num_diseases = len(disease_cols)
         st.success(f"✅ Melted data: {long_new.shape[0]} records across {num_diseases} diseases.")
 
-        # Merge with thresholds
+        # Disease seasons mapping
+        all_seasons = ['Spring', 'Summer', 'Autumn', 'Winter']
+        disease_seasons = {
+            # All seasonal diseases: thresholds for every season
+            'Measles (New Cases)': all_seasons,
+            'Chickenpox/ Varicella (New cases)': all_seasons,
+            'Rubella (Congenital Rubella Syndrome (CRS)) (New Cases)': all_seasons,
+            'Mumps (New Cases)': all_seasons,
+            'Pertussis (New cases)': all_seasons,
+            'Influenza-Like Illness (New Cases)': all_seasons,
+            'Pneumonia/ALRI (Acute Lower Respiratory Infections) under 5 years (New Cases)': all_seasons,
+            'Scabies (New Cases)': all_seasons,
+            'Acute Diarrhea (Non-Cholera) (New Cases)': all_seasons,
+            'Acute Watery Diarrhea (Suspected Cholera) (New Cases)': all_seasons,
+            'Bloody Diarrhea (New Cases)': all_seasons,
+            'Typhoid Fever (New Cases)': all_seasons,
+            'Salmonellosis (New Cases)': all_seasons,
+            'Viral Hepatitis (B, C & D) (New Cases)': all_seasons,
+            'Brucellosis (New cases)': all_seasons,
+            'Dog Bite (New Cases)': all_seasons,
+            'Anthrax (New Cases)': all_seasons,
+            'Chikungunya (New Cases)': all_seasons,
+            'Malaria (New Cases)': all_seasons,
+            'Dengue Fever (New Cases)': all_seasons,
+            'Cutaneous Leishmaniasis (New Cases)': all_seasons,
+            'Crimean Congo Hemorrhagic Fever (New Cases)': all_seasons,
+            'Severe Acute Respiratory Infection (New Cases)': all_seasons,
+            'Tuberculosis (New Cases)': all_seasons,
+            'COVID-19 (New Cases)': all_seasons,
+            'Diphtheria (Probable) (New Cases)': all_seasons,
+            'Encephalitis (New Cases)': all_seasons,
+            'Meningitis (New Cases)': all_seasons,
+            # Add any additional KP-specific diseases here, e.g.:
+            # 'New KP Disease (New Cases)': all_seasons,  # Placeholder; update based on your data head
+
+            # Year-Round (unchanged, excluding Other-1/Other-2)
+            'Acute Flaccid Paralysis (New Cases)': ['Year-Round'],
+            'Botulism (New Cases)': ['Year-Round'],
+            'Gonorrhea (New Cases)': ['Year-Round'],
+            'HIV/AIDS (New Cases)': ['Year-Round'],
+            'Leprosy (New Cases)': ['Year-Round'],
+            'Nosocomial Infections (New Cases)': ['Year-Round'],
+            'Syphilis (New Cases)': ['Year-Round'],
+            'Visceral Leishmaniasis (New Cases)': ['Year-Round'],
+            'Neonatal Tetanus (New Cases)': ['Year-Round']
+        }
+
+        # Map threshold season for each disease
+        threshold_season_map = {}
+        for disease, seasons in disease_seasons.items():
+            if seasons == all_seasons:
+                threshold_season_map[disease] = current_season
+            elif seasons == ['Year-Round']:
+                threshold_season_map[disease] = 'Year-Round'
+        long_new['Threshold_Season'] = long_new['Disease'].map(threshold_season_map).fillna(current_season)
+
+        # Merge with thresholds using Threshold_Season
         if 'Season' not in threshold_df.columns:
             st.error("❌ Threshold file missing 'Season' column. Regenerate thresholds.")
             st.stop()
-        filtered_thresholds = threshold_df[threshold_df['Season'] == current_season]
         alerts = long_new.merge(
-            filtered_thresholds[['Facility_ID', 'Disease', 'Season', 'Threshold_95', 'Threshold_99', 'Mean', 'SD']], 
+            threshold_df[['Facility_ID', 'Disease', 'Season', 'Threshold_95', 'Threshold_99', 'Mean', 'SD']], 
+            left_on=['Facility_ID', 'Disease', 'Threshold_Season'],
+            right_on=['Facility_ID', 'Disease', 'Season'],
             how='left'
         )
 
-        # Define high-priority (year-round) diseases (alert on >=1 case, expected 0)
+        # Define high-priority (year-round zero-tolerance) diseases (alert on >=1 case, expected 0)
         high_priority_diseases = [
             "Crimean Congo Hemorrhagic Fever (New Cases)",
             "Anthrax (New Cases)",
@@ -194,20 +251,19 @@ if st.button("🚨 Generate Outbreak Alerts", type="primary"):
             "Acute Flaccid Paralysis (New Cases)"
         ]
 
-        # Fill missing thresholds for high-priority diseases with defaults (expected 0 cases)
+        # Override thresholds for high-priority diseases (force zero-tolerance)
         is_high_priority = alerts['Disease'].isin(high_priority_diseases)
-        mask_missing = is_high_priority & alerts['Threshold_95'].isna()
-        alerts.loc[mask_missing, 'Threshold_95'] = 0
-        alerts.loc[mask_missing, 'Threshold_99'] = 1  # >1 case for High Alert
-        alerts.loc[mask_missing, 'Mean'] = 0
-        alerts.loc[mask_missing, 'SD'] = 0
+        alerts.loc[is_high_priority, 'Threshold_95'] = 0
+        alerts.loc[is_high_priority, 'Threshold_99'] = 1
+        alerts.loc[is_high_priority, 'Mean'] = 0
+        alerts.loc[is_high_priority, 'SD'] = 0
 
         # Initialize Alert_Level to Normal
         alerts['Alert_Level'] = 'Normal'
 
         has_valid_threshold = alerts['Threshold_95'].notna()
 
-        # For high-priority (year-round): Alert if Cases >=1 and valid threshold
+        # For high-priority: Alert if Cases >=1 and valid threshold
         high_priority_mask = is_high_priority & (alerts['Cases'] >= 1) & has_valid_threshold
         alerts.loc[high_priority_mask & (alerts['Cases'] > alerts['Threshold_99']), 'Alert_Level'] = 'High Alert'
         alerts.loc[high_priority_mask & ~(alerts['Cases'] > alerts['Threshold_99']), 'Alert_Level'] = 'Alert'
@@ -302,11 +358,12 @@ with st.sidebar:
     st.header("🛠️ How It Works")
     st.markdown("""
     - **Seasonal Diseases**: Alert if >1 case + > Threshold_95 (Alert) or > Threshold_99 (High Alert).
-    - **Year-Round/High-Priority Diseases** (e.g., CCHF, Anthrax): Alert on 1 case; High Alert on >1 case (defaults if no seasonal threshold match).
-    - **Deviation**: Cases for year-round; from threshold for seasonal.
+    - **Year-Round Diseases**: Use 'Year-Round' thresholds if available.
+    - **High-Priority Diseases** (e.g., CCHF, Anthrax): Force alert on >=1 case (Alert on 1, High on >1); overrides thresholds.
+    - **Deviation**: Cases for high-priority; from threshold for others.
     - **Filters**: Excludes 1-case seasonal alerts, zero/negative deviations, and invalid thresholds.
     - **Prioritization**: Sorted by deviation.
     - Fully automated—no tweaks needed.
     """)
     st.markdown("---")
-    st.markdown("*Developed by Asad Khan* | *Simplified Multi-Province v1.2*")
+    st.markdown("*Developed by Asad Khan* | *Simplified Multi-Province v1.3*")
