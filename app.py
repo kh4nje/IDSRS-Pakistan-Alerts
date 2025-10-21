@@ -230,14 +230,15 @@ if st.button("🚨 Generate Outbreak Alerts", type="primary"):
                 threshold_season_map[disease] = 'Year-Round'
         long_new['Threshold_Season'] = long_new['Disease'].map(threshold_season_map).fillna(current_season)
 
-        # Merge with thresholds using Threshold_Season
+        # Merge with thresholds using Threshold_Season; rename to avoid suffix conflicts
         if 'Season' not in threshold_df.columns:
             st.error("❌ Threshold file missing 'Season' column. Regenerate thresholds.")
             st.stop()
+        # Rename threshold_df's Season temporarily to avoid conflict
+        threshold_df_renamed = threshold_df.rename(columns={'Season': 'Threshold_Season'})
         alerts = long_new.merge(
-            threshold_df[['Facility_ID', 'Disease', 'Season', 'Threshold_95', 'Threshold_99', 'Mean', 'SD']], 
-            left_on=['Facility_ID', 'Disease', 'Threshold_Season'],
-            right_on=['Facility_ID', 'Disease', 'Season'],
+            threshold_df_renamed[['Facility_ID', 'Disease', 'Threshold_Season', 'Threshold_95', 'Threshold_99', 'Mean', 'SD']], 
+            on=['Facility_ID', 'Disease', 'Threshold_Season'],
             how='left'
         )
 
