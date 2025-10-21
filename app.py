@@ -239,17 +239,18 @@ if st.button("🚨 Generate Outbreak Alerts", type="primary"):
         priority_alerts = alerts[alerts['Disease'].isin(selected_priority_diseases)]
         non_priority_alerts = alerts[~alerts['Disease'].isin(selected_priority_diseases)]
         
-        # Sliders for non-priority (only if any exist)
-        col1, col2 = st.columns(2)
-        with col1:
-            top_n = st.slider("Top N Non-Priority Alerts", min_value=0, max_value=len(non_priority_alerts), value=min(50, len(non_priority_alerts)), help="Limit non-priority alerts by rank (highest deviation first).")
-        with col2:
-            if len(non_priority_alerts) > 0:
+        # FIXED: Conditional sliders only if non-priority alerts exist
+        if len(non_priority_alerts) > 0:
+            col1, col2 = st.columns(2)
+            with col1:
+                top_n = st.slider("Top N Non-Priority Alerts", min_value=0, max_value=len(non_priority_alerts), value=min(50, len(non_priority_alerts)), help="Limit non-priority alerts by rank (highest deviation first).")
+            with col2:
                 max_dev = non_priority_alerts['Deviation'].max()
                 min_dev = st.slider("Min Deviation for Non-Priority", min_value=0.0, max_value=max_dev, value=0.0, help="Minimum cases above threshold to include.")
-            else:
-                min_dev = 0.0
-                st.empty()
+        else:
+            top_n = 0
+            min_dev = 0.0
+            st.info("ℹ️ No non-priority alerts to filter.")
 
         filtered_non_priority = non_priority_alerts[non_priority_alerts['Deviation'] >= min_dev].head(top_n)
         final_alerts = pd.concat([priority_alerts, filtered_non_priority], ignore_index=True)
@@ -315,4 +316,4 @@ with st.sidebar:
     - **No Matches?**: Check Facility_ID alignment or regenerate thresholds.
     """)
     st.markdown("---")
-    st.markdown("*Developed by Asad Khan* | *Version 2.0*")
+    st.markdown("*Developed by Asad Khan* | *Version 2.1*")
