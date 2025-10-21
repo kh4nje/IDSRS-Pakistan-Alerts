@@ -121,15 +121,39 @@ if new_file is None:
     st.info("👆 Please upload your weekly data file to generate alerts.")
     st.stop()
 
-# Tunable options for noise reduction
-st.markdown("### 🔧 Alert Customization")
-col1, col2 = st.columns(2)
-with col1:
-    min_multiplier = st.slider("Min % Increase over Mean (for Seasonal)", min_value=1.5, max_value=4.0, value=2.5, step=0.1, help="E.g., 2.5x = Cases > 2.5 * historical mean.")
-with col2:
-    top_n = st.slider("Top N Alerts by Severity Score", min_value=10, max_value=200, value=50, help="Show highest-ranked alerts (all diseases prioritized equally).")
+# Preset Alert Modes (replaces sliders for simplicity)
+st.markdown("### 🚨 Alert Mode")
+alert_mode = st.radio(
+    "Choose your focus:",
+    ["Routine (Balanced Weekly Scan)", "Outbreak Hunt (Early Detection)", "Priority Only (Top High-Impact)", "All Signals (Exhaustive Review)"],
+    index=0,
+    horizontal=True,
+    help="Routine: Default for standard use. Outbreak Hunt: Sensitive for emerging threats. Priority Only: Strict focus on urgent cases. All Signals: Show everything above thresholds."
+)
 
-require_cluster = st.checkbox("Require District Clusters (≥2 facilities per disease)", value=True, help="Suppress isolated alerts; focus on local hotspots.")
+# Map mode to settings
+if alert_mode == "Routine (Balanced Weekly Scan)":
+    min_multiplier = 2.5
+    top_n = 50
+    require_cluster = True
+    cluster_min = 2
+elif alert_mode == "Outbreak Hunt (Early Detection)":
+    min_multiplier = 1.5
+    top_n = 100
+    require_cluster = True
+    cluster_min = 2
+elif alert_mode == "Priority Only (Top High-Impact)":
+    min_multiplier = 3.0
+    top_n = 20
+    require_cluster = True
+    cluster_min = 3
+else:  # All Signals
+    min_multiplier = 1.0
+    top_n = 200
+    require_cluster = False
+    cluster_min = 1  # Ignored if not clustering
+
+st.info(f"**Selected: {alert_mode}** | Min surge: {min_multiplier}x mean | Top alerts: {top_n} | Clustering: {'ON (≥{cluster_min} facilities)' if require_cluster else 'OFF'}")
 
 # Run button
 if st.button("🚨 Generate Outbreak Alerts", type="primary"):
@@ -296,9 +320,9 @@ if st.button("🚨 Generate Outbreak Alerts", type="primary"):
         # Optional: Clustering for seasonal (group by District + Disease, count facilities)
         if require_cluster:
             seasonal_clusters = seasonal_alerts.groupby(['District', 'Disease']).size().reset_index(name='Cluster_Size')
-            seasonal_clusters = seasonal_clusters[seasonal_clusters['Cluster_Size'] >= 2]
+            seasonal_clusters = seasonal_clusters[seasonal_clusters['Cluster_Size'] >= cluster_min]
             seasonal_alerts = seasonal_alerts.merge(seasonal_clusters[['District', 'Disease', 'Cluster_Size']], on=['District', 'Disease'], how='inner')
-            st.info(f"ℹ️ Clustered {len(seasonal_clusters)} district-disease hotspots (≥2 facilities).")
+            st.info(f"ℹ️ Clustered {len(seasonal_clusters)} district-disease hotspots (≥{cluster_min} facilities).")
         else:
             seasonal_alerts['Cluster_Size'] = 1  # Singleton
 
@@ -374,16 +398,16 @@ with st.sidebar:
     1. **Select Province**: Choose from the dropdown.
     2. **Threshold File**: Ensure the matching file is in your app folder (e.g., `seasonal_thresholds_kp.xlsx` for KP).
     3. **Upload Data**: Weekly DHIS2 export with `periodname`, org levels, and `(New Cases)` columns.
-    4. **Customize**: Adjust % increase and top-N for focus.
+    4. **Choose Mode**: Pick an alert mode for your needs (Routine is default).
     5. **Generate**: Click the button to process and view prioritized alerts.
     """)
     st.markdown("---")
     st.header("🛠️ How It Works")
     st.markdown("""
-    - **Year-Round Diseases**: All alerts included (e.g., AFP—even 1 case; now covers TB, Brucellosis, Encephalitis, etc.).
-    - **Seasonal Filtering**: >2.5x historical mean + district clusters (≥2 facilities).
+    - **Year-Round Diseases**: All alerts included (e.g., AFP—even 1 case; covers TB, Brucellosis, etc.).
+    - **Seasonal Filtering**: Surge threshold + district clusters (per mode).
     - **Scoring**: Ranks by % deviation × disease impact + cluster bonus.
-    - **Weights**: Dengue/CCHF=2.5-3.0x boost; Scabies=0.5x (edit dict in code to tune). *100% coverage of provided IDSRS list!*
+    - **Weights**: Dengue/CCHF=2.5-3.0x boost; Scabies=0.5x (edit dict to tune).
     """)
     st.markdown("---")
-    st.markdown("*Developed by Asad Khan* | *Version 2.8*")
+    st.markdown("*Developed by Asad Khan* | *Version 2.9*")
