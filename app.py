@@ -8,8 +8,12 @@ import re
 # Utility Functions
 # -----------------------
 @st.cache_data
-def load_csv(file):
-    return pd.read_csv(file)
+def load_csv(file_path):
+    return pd.read_csv(file_path)
+
+@st.cache_data
+def load_excel(file_path):
+    return pd.read_excel(file_path)
 
 def parse_week_number(period):
     """Extract week number (integer) from periodname like 'Week 23 2024' or '2024W23'."""
@@ -27,15 +31,34 @@ def determine_season(week):
     else:
         return 'Winter'
 
-def get_threshold_file(province):
-    """Load existing province-specific threshold file."""
-    filename = f"{province}_threshold.csv"
-    if os.path.exists(filename):
-        st.sidebar.info(f"✅ Loaded threshold file for {province}")
-        return pd.read_csv(filename)
-    else:
-        st.sidebar.error(f"❌ Threshold file not found for {province}. Please add it manually first.")
+def load_threshold_local(province):
+    """Load threshold file based on province name and file mapping."""
+    province_files = {
+        "AJK": "AJK.csv",
+        "Balochistan": "Balochistan.csv",
+        "Gilgit Baltistan": "GB.csv",
+        "Islamabad": "ICT.csv",
+        "Sindh": "Sindh.xlsx",
+        "KP": "seasonal_thresholds_kp.xlsx"
+    }
+
+    if province not in province_files:
+        st.error(f"❌ No threshold file mapping found for {province}.")
         st.stop()
+
+    file_name = province_files[province]
+
+    if not os.path.exists(file_name):
+        st.error(f"❌ Threshold file '{file_name}' not found in the app directory.")
+        st.stop()
+
+    if file_name.endswith(".csv"):
+        df = load_csv(file_name)
+    else:
+        df = load_excel(file_name)
+
+    st.sidebar.success(f"✅ Loaded threshold file: {file_name}")
+    return df
 
 def validate_threshold_file(th_df):
     """Ensure threshold file has required columns."""
@@ -49,7 +72,7 @@ def validate_threshold_file(th_df):
 # -----------------------
 # Main Processing Logic
 # -----------------------
-def process_alerts(data_df, threshold_df, province, top_n, min_deviation):
+def process_alerts(data_df, threshold_df, top_n, min_deviation):
     """Main alert generation logic."""
     data_df = data_df.copy()
     threshold_df = threshold_df.copy()
@@ -82,7 +105,7 @@ def process_alerts(data_df, threshold_df, province, top_n, min_deviation):
     merged['Crossed_99'] = merged['Current_Week'] > merged['Threshold_99']
     merged['Crossed_95'] = (merged['Current_Week'] > merged['Threshold_95']) & (~merged['Crossed_99'])
 
-    # Include only records crossing any threshold
+    # Include only records crossing thresholds
     alerts = merged[(merged['Crossed_95']) | (merged['Crossed_99'])].copy()
 
     # Compute deviation percentage
@@ -105,22 +128,21 @@ def process_alerts(data_df, threshold_df, province, top_n, min_deviation):
 # Streamlit UI
 # -----------------------
 st.set_page_config(page_title="Disease Alert Generator", layout="wide")
-
 st.title("📊 Automated Disease Alert Generator")
 
 st.sidebar.header("⚙️ Configuration")
 
 province = st.sidebar.selectbox(
     "Select Province:",
-    ["Punjab", "Sindh", "Balochistan", "Khyber Pakhtunkhwa"]
+    ["AJK", "Balochistan", "Gilgit Baltistan", "Islamabad", "Sindh", "KP"]
 )
 
-# Load saved threshold automatically
-threshold_df = get_threshold_file(province)
+# Load province-specific threshold file automatically
+threshold_df = load_threshold_local(province)
 if not validate_threshold_file(threshold_df):
     st.stop()
 
-# Ask only for current week's data
+# Upload current week data only
 uploaded_data = st.sidebar.file_uploader("⬆️ Upload Current Week Data CSV:", type=["csv"])
 if not uploaded_data:
     st.info("Please upload the current week’s data file to generate alerts.")
@@ -133,7 +155,7 @@ top_n = st.sidebar.slider("Show top N alerts:", 5, 50, 15)
 min_deviation = st.sidebar.slider("Minimum deviation %:", 0, 200, 50, 10)
 
 # Generate alerts
-alerts_df = process_alerts(data_df, threshold_df, province, top_n, min_deviation)
+alerts_df = process_alerts(data_df, threshold_df, top_n, min_deviation)
 
 # Display results
 st.subheader("🚨 Disease Alerts")
