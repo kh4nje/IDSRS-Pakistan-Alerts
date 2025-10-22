@@ -2,29 +2,32 @@ import streamlit as st
 import pandas as pd
 from twilio.rest import Client
 
-# Hardcoded Twilio credentials and WhatsApp numbers (replace with your actual values)
-account_sid = 'ACe0cc33b5586f53c2fd861efdd7c6fef5'  # e.g., 'ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx'
-auth_token = '9fe04f4f8183dee4a9a954c4fc2de137'    # e.g., 'xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx'
-from_whatsapp = '+16093545812'       # Twilio sandbox sender number
-to_whatsapp = '+923109511712'        # Recipient number (province headquarters)
+# Hardcoded Twilio Account SID and WhatsApp numbers (replace with your actual values if needed)
+account_sid = 'your_twilio_account_sid_here'  # e.g., 'ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx'
+from_whatsapp = 'whatsapp:+14155238886'       # Twilio sandbox sender number
+to_whatsapp = 'whatsapp:+923001234567'        # Recipient number (province headquarters)
 
 # Streamlit app title
 st.title("Disease Alert Sender App")
 
 # Instructions
 st.sidebar.title("Instructions")
-st.sidebar.write("1. Upload the alert CSV file (e.g., alerts_khyber_pakhtunkhwa_week_XX.csv).")
-st.sidebar.write("2. Click 'Send Alerts' to send WhatsApp messages using the template.")
+st.sidebar.write("1. Enter your Twilio Auth Token below (it will be hidden).")
+st.sidebar.write("2. Upload the alert CSV file (e.g., alerts_khyber_pakhtunkhwa_week_XX.csv).")
+st.sidebar.write("3. Click 'Send Alerts' to send WhatsApp messages using the template.")
 st.sidebar.write("Note: Messages will be sent in the format 'DISEASE ALERT: {alert_details} Kindly Investigate ASAP'")
-st.sidebar.write("Credentials are hardcoded—ensure they are set correctly in the code.")
+st.sidebar.write("Account SID and WhatsApp numbers are hardcoded—edit the code if needed.")
 st.sidebar.write("Developer: Asad Khan")
+
+# Input Twilio Auth Token manually
+auth_token = st.text_input("Twilio Auth Token", type="password")
 
 # Upload alert file
 alert_file = st.file_uploader("Upload Alert CSV", type=['csv'])
 
 if st.button("Send Alerts"):
-    if alert_file is None:
-        st.error("Please upload the alert file.")
+    if not auth_token or alert_file is None:
+        st.error("Please enter the Auth Token and upload the alert file.")
     else:
         try:
             # Load the CSV
@@ -57,7 +60,7 @@ if st.button("Send Alerts"):
                     f"Deviation: {row['Deviation']}"
                 )
 
-                # Template body
+                # Template body (free-form, no template SID)
                 body = f"DISEASE ALERT:\n{details}\n\nKindly Investigate ASAP"
 
                 # Send message
