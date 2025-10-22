@@ -17,7 +17,7 @@ st.sidebar.title("Instructions")
 st.sidebar.write("1. Enter your Twilio Auth Token below (it will be hidden).")
 st.sidebar.write("2. Upload the alert CSV file (e.g., alerts_khyber_pakhtunkhwa_week_XX.csv).")
 st.sidebar.write("3. Click 'Send Alerts' to send WhatsApp messages using the template.")
-st.sidebar.write("Note: Messages will use the template 'DISEASE ALERT: {{1}} Kindly Investigate ASAP', with alert details in {{1}}.")
+st.sidebar.write("Note: All alerts will be combined into a single message in the format 'DISEASE ALERT: {{1}} Kindly Investigate ASAP', with simplified alert details in {{1}}.")
 st.sidebar.write("Account SID, Template SID, and WhatsApp numbers are hardcoded—edit the code if needed.")
 st.sidebar.write("Developer: Asad Khan")
 
@@ -41,44 +41,42 @@ if st.button("Send Alerts"):
             # Initialize Twilio client
             client = Client(account_sid, auth_token)
 
-            # Progress bar
+            # Progress bar (single message, but show progress for processing)
             progress_bar = st.progress(0)
             status = st.empty()
             total_alerts = len(df)
-            sent_count = 0
 
+            # Collect all alert details into one formatted string (simplified format)
+            all_details = ""
             for index, row in df.iterrows():
-                # Format the alert details for {{1}}
+                # Parse Facility_ID (assuming format like Province_District_..._FacilityName)
+                parts = row['Facility_ID'].split('_')
+                district = parts[2] if len(parts) > 2 else "Unknown"  # Assuming index 2 is District (adjust if needed)
+                facility = parts[-1] if parts else "Unknown"  # Last part is facility name
+
                 details = (
-                    f"Disease: {row['Disease']}, "
-                    f"Facility: {row['Facility_ID']}, "
-                    f"Season: {row['Season']}, "
-                    f"Cases: {row['Cases']}, "
-                    f"Mean: {row['Mean']}, "
-                    f"SD: {row['SD']}, "
-                    f"Threshold_95: {row['Threshold_95']}, "
-                    f"Threshold_99: {row['Threshold_99']}, "
-                    f"Alert_Level: {row['Alert_Level']}, "
-                    f"Deviation: {row['Deviation']}"
+                    f"{index + 1}. {row['Cases']} {row['Disease'].replace('(New Cases)', '').strip()} cases, "
+                    f"From District, {district}, Health facility {facility}\n\n"
                 )
+                all_details += details
 
-                # Content variables as JSON string
-                content_variables = json.dumps({"1": details})
-
-                # Send message using template
-                message = client.messages.create(
-                    from_=from_whatsapp,
-                    content_sid=template_sid,
-                    content_variables=content_variables,
-                    to=to_whatsapp
-                )
-
-                sent_count += 1
-                progress = sent_count / total_alerts
+                # Update progress for each row processed
+                progress = (index + 1) / total_alerts
                 progress_bar.progress(progress)
-                status.text(f"Sent {sent_count}/{total_alerts} alerts. Last SID: {message.sid}")
+                status.text(f"Processed {index + 1}/{total_alerts} alerts.")
 
-            st.success(f"All {total_alerts} alerts sent successfully!")
+            # Content variables as JSON string (all details in {{1}})
+            content_variables = json.dumps({"1": all_details.strip()})
+
+            # Send single message using template
+            message = client.messages.create(
+                from_=from_whatsapp,
+                content_sid=template_sid,
+                content_variables=content_variables,
+                to=to_whatsapp
+            )
+
+            st.success(f"Single alert message with {total_alerts} alerts sent successfully! SID: {message.sid}")
 
         except Exception as e:
-            st.error(f"Error sending messages: {str(e)}")
+            st.error(f"Error sending message: {str(e)}")
