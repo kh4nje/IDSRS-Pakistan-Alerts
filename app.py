@@ -19,7 +19,7 @@ def load_threshold_local(province):
         "Gilgit Baltistan": "GB.csv",
         "Islamabad": "ICT.csv",
         "Sindh": "Sindh.xlsx",
-        "Khyber Pakhtunkhwa": "seasonal_thresholds_kp.csv"
+        "Khyber Pakhtunkhwa": "seasonal_thresholds_kp.xlsx"
     }
     threshold_filename = province_files.get(province)
     if threshold_filename is None:
@@ -290,3 +290,4 @@ st.sidebar.write("3. Upload weekly data (CSV/Excel).")
 st.sidebar.write("4. Adjust filters and click 'Generate Alerts'.")
 st.sidebar.write("5. View and download results (CSV).")
 st.sidebar.write("Developer: Asad khan")
+
