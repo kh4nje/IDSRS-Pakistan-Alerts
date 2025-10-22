@@ -2,31 +2,29 @@ import streamlit as st
 import pandas as pd
 from twilio.rest import Client
 
+# Hardcoded Twilio credentials and WhatsApp numbers (replace with your actual values)
+account_sid = 'your_twilio_account_sid_here'  # e.g., 'ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx'
+auth_token = 'your_twilio_auth_token_here'    # e.g., 'xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx'
+from_whatsapp = 'whatsapp:+14155238886'       # Twilio sandbox sender number
+to_whatsapp = 'whatsapp:+923001234567'        # Recipient number (province headquarters)
+
 # Streamlit app title
 st.title("Disease Alert Sender App")
 
 # Instructions
 st.sidebar.title("Instructions")
-st.sidebar.write("1. Enter your Twilio credentials (Account SID and Auth Token).")
-st.sidebar.write("2. Enter the sender WhatsApp number (e.g., whatsapp:+14155238886).")
-st.sidebar.write("3. Enter the recipient WhatsApp number (e.g., whatsapp:+923001234567).")
-st.sidebar.write("4. Upload the alert CSV file (e.g., alerts_khyber_pakhtunkhwa_week_XX.csv).")
-st.sidebar.write("5. Click 'Send Alerts' to send WhatsApp messages using the template.")
+st.sidebar.write("1. Upload the alert CSV file (e.g., alerts_khyber_pakhtunkhwa_week_XX.csv).")
+st.sidebar.write("2. Click 'Send Alerts' to send WhatsApp messages using the template.")
 st.sidebar.write("Note: Messages will be sent in the format 'DISEASE ALERT: {alert_details} Kindly Investigate ASAP'")
+st.sidebar.write("Credentials are hardcoded—ensure they are set correctly in the code.")
 st.sidebar.write("Developer: Asad Khan")
-
-# Input Twilio credentials
-account_sid = st.text_input("Twilio Account SID", type="password")
-auth_token = st.text_input("Twilio Auth Token", type="password")
-from_whatsapp = st.text_input("Sender WhatsApp Number (Twilio sandbox, e.g., whatsapp:+14155238886)")
-to_whatsapp = st.text_input("Recipient WhatsApp Number (e.g., whatsapp:+923001234567)")
 
 # Upload alert file
 alert_file = st.file_uploader("Upload Alert CSV", type=['csv'])
 
 if st.button("Send Alerts"):
-    if not all([account_sid, auth_token, from_whatsapp, to_whatsapp]) or alert_file is None:
-        st.error("Please provide all Twilio credentials, WhatsApp numbers, and upload the alert file.")
+    if alert_file is None:
+        st.error("Please upload the alert file.")
     else:
         try:
             # Load the CSV
