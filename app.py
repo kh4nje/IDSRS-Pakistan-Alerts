@@ -245,7 +245,7 @@ if st.button("Generate Alerts"):
         if len(non_priority_alerts) > 0:
             col1, col2 = st.columns(2)
             with col1:
-                top_n = st.slider("Top N Non-Priority Alerts", min_value=0, max_value=len(non_priority_alerts), value=min(50, len(non_priority_alerts)))
+                top_n = st.slider("Top N Non-Priority Alerts", min_value=0, max_value=len(non_priority_alerts), value=min(80, len(non_priority_alerts)))
             with col2:
                 max_dev = non_priority_alerts['Deviation'].max()
                 min_dev = st.slider("Min Deviation for Non-Priority", min_value=0.0, max_value=float(max_dev), value=0.0)
@@ -290,5 +290,6 @@ st.sidebar.write("3. Upload weekly data (CSV/Excel).")
 st.sidebar.write("4. Adjust filters and click 'Generate Alerts'.")
 st.sidebar.write("5. View and download results (CSV).")
 st.sidebar.write("Developer: Asad khan")
+
 
 
