@@ -3,10 +3,10 @@ import pandas as pd
 from twilio.rest import Client
 
 # Hardcoded Twilio credentials and WhatsApp numbers (replace with your actual values)
-account_sid = 'your_twilio_account_sid_here'  # e.g., 'ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx'
-auth_token = 'your_twilio_auth_token_here'    # e.g., 'xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx'
-from_whatsapp = 'whatsapp:+14155238886'       # Twilio sandbox sender number
-to_whatsapp = 'whatsapp:+923001234567'        # Recipient number (province headquarters)
+account_sid = 'ACe0cc33b5586f53c2fd861efdd7c6fef5'  # e.g., 'ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx'
+auth_token = '9fe04f4f8183dee4a9a954c4fc2de137'    # e.g., 'xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx'
+from_whatsapp = '+16093545812'       # Twilio sandbox sender number
+to_whatsapp = '+923109511712'        # Recipient number (province headquarters)
 
 # Streamlit app title
 st.title("Disease Alert Sender App")
