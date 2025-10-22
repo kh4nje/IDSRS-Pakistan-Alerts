@@ -110,7 +110,7 @@ if st.button("Generate Alerts"):
             st.stop()
 
         status.text('Parsing week and season...')
-        progress_bar.progress(50)
+        progress_bar.progress(60)
         # Parse periodname with expanded patterns for robustness
         if 'periodname' in new_df.columns:
             new_df['periodname'] = new_df['periodname'].astype(str).str.strip()
@@ -290,4 +290,5 @@ st.sidebar.write("3. Upload weekly data (CSV/Excel).")
 st.sidebar.write("4. Adjust filters and click 'Generate Alerts'.")
 st.sidebar.write("5. View and download results (CSV).")
 st.sidebar.write("Developer: Asad khan")
+
 
