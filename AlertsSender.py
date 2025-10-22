@@ -1,11 +1,12 @@
 import streamlit as st
 import pandas as pd
 from twilio.rest import Client
+import json
 
 # Hardcoded Twilio Account SID and WhatsApp numbers (replace with your actual values if needed)
-account_sid = 'your_twilio_account_sid_here'  # e.g., 'ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx'
-from_whatsapp = 'whatsapp:+14155238886'       # Twilio sandbox sender number
-to_whatsapp = 'whatsapp:+923001234567'        # Recipient number (province headquarters)
+account_sid = 'ACe0cc33b5586f53c2fd861efdd7c6fef5'  # Updated with provided SID
+from_whatsapp = 'whatsapp:+16093545812'       # Updated sender number
+to_whatsapp = 'whatsapp:+923109511712'        # Updated recipient number (province headquarters)
 
 # Streamlit app title
 st.title("Disease Alert Sender App")
@@ -13,21 +14,25 @@ st.title("Disease Alert Sender App")
 # Instructions
 st.sidebar.title("Instructions")
 st.sidebar.write("1. Enter your Twilio Auth Token below (it will be hidden).")
-st.sidebar.write("2. Upload the alert CSV file (e.g., alerts_khyber_pakhtunkhwa_week_XX.csv).")
-st.sidebar.write("3. Click 'Send Alerts' to send WhatsApp messages using the template.")
-st.sidebar.write("Note: Messages will be sent in the format 'DISEASE ALERT: {alert_details} Kindly Investigate ASAP'")
+st.sidebar.write("2. Enter your verified WhatsApp Template SID (e.g., HXxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx).")
+st.sidebar.write("3. Upload the alert CSV file (e.g., alerts_khyber_pakhtunkhwa_week_XX.csv).")
+st.sidebar.write("4. Click 'Send Alerts' to send WhatsApp messages using the template.")
+st.sidebar.write("Note: Messages will use the template 'DISEASE ALERT: {{1}} Kindly Investigate ASAP', with alert details in {{1}}.")
 st.sidebar.write("Account SID and WhatsApp numbers are hardcoded—edit the code if needed.")
 st.sidebar.write("Developer: Asad Khan")
 
 # Input Twilio Auth Token manually
 auth_token = st.text_input("Twilio Auth Token", type="password")
 
+# Input Template SID
+template_sid = st.text_input("WhatsApp Template SID", type="password")
+
 # Upload alert file
 alert_file = st.file_uploader("Upload Alert CSV", type=['csv'])
 
 if st.button("Send Alerts"):
-    if not auth_token or alert_file is None:
-        st.error("Please enter the Auth Token and upload the alert file.")
+    if not auth_token or not template_sid or alert_file is None:
+        st.error("Please enter the Auth Token, Template SID, and upload the alert file.")
     else:
         try:
             # Load the CSV
@@ -60,13 +65,14 @@ if st.button("Send Alerts"):
                     f"Deviation: {row['Deviation']}"
                 )
 
-                # Template body (free-form, no template SID)
-                body = f"DISEASE ALERT:\n{details}\n\nKindly Investigate ASAP"
+                # Content variables as JSON string
+                content_variables = json.dumps({"1": details})
 
-                # Send message
+                # Send message using template
                 message = client.messages.create(
                     from_=from_whatsapp,
-                    body=body,
+                    content_sid=template_sid,
+                    content_variables=content_variables,
                     to=to_whatsapp
                 )
 
