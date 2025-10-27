@@ -214,7 +214,8 @@ if st.button("Generate Alerts"):
         if len(disease_cols) == 0:
             st.error("No disease columns found.")
             st.stop()
-        new_df[disease_cols] = new_df[disease_cols].fillna(0).astype(float)  # Fill NaN with 0, use float for consistency
+        # Fixed: Use pd.to_numeric with errors='coerce' to handle non-numeric values
+        new_df[disease_cols] = new_df[disease_cols].apply(pd.to_numeric, errors='coerce').fillna(0)
         if new_df.empty:
             st.error("DataFrame is empty after parsing—cannot melt.")
             st.stop()
