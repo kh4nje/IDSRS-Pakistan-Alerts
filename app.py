@@ -6,6 +6,7 @@ from io import BytesIO
 import folium
 from streamlit_folium import st_folium
 from folium.plugins import MarkerCluster
+from geopy.geocoders import Nominatim
 
 @st.cache_data
 def load_file(file):
@@ -13,6 +14,19 @@ def load_file(file):
         return pd.read_excel(file)
     else:
         return pd.read_csv(file)
+
+@st.cache_data
+def get_coordinates(address):
+    try:
+        geolocator = Nominatim(user_agent="idsrs_pakistan_app")
+        location = geolocator.geocode(address, timeout=10)
+        if location:
+            return location.latitude, location.longitude
+        else:
+            return None, None
+    except Exception as e:
+        st.warning(f"Geocoding error for {address}: {e}")
+        return None, None
 
 def load_threshold_local(province):
     # Mapping of province names to threshold file names
@@ -91,19 +105,6 @@ if 'accumulated_alerts' not in st.session_state:
 if st.button("Clear Accumulated Alerts"):
     st.session_state['accumulated_alerts'] = {}
     st.success("Accumulated alerts cleared.")
-
-# Upload geo data file (assume a CSV with Facility_ID, lat, long, province, district if needed)
-# This is a new feature: user uploads or loads a geo reference file once
-geo_file = st.file_uploader("Upload Facilities Geo Data (CSV with Facility_ID, lat, long)", type=['csv'], key="geo_uploader")
-if geo_file:
-    geo_df = pd.read_csv(geo_file)
-    st.session_state['geo_df'] = geo_df
-    st.success("Geo data loaded.")
-elif 'geo_df' in st.session_state:
-    geo_df = st.session_state['geo_df']
-else:
-    st.warning("Please upload a geo data CSV with columns: Facility_ID, lat, long (and optionally province, district).")
-    geo_df = None
 
 # Run button
 if st.button("Generate Alerts"):
@@ -285,6 +286,16 @@ if st.button("Generate Alerts"):
         st.write(f"Total alerts for {selected_province}: {len(final_alerts)} ({len(priority_alerts)} priority + {len(filtered_non_priority)} filtered)")
 
         if not final_alerts.empty:
+            # Add lat and long using geocoding
+            final_alerts['lat'] = None
+            final_alerts['long'] = None
+            for idx, row in final_alerts.iterrows():
+                parts = row['Facility_ID'].split('_')
+                address = ', '.join(parts[::-1])  # Reverse to start with facility name, end with higher level
+                lat, lon = get_coordinates(address)
+                final_alerts.at[idx, 'lat'] = lat
+                final_alerts.at[idx, 'long'] = lon
+
             st.dataframe(final_alerts)
 
             # Store in session state (update or add for this province)
@@ -313,14 +324,14 @@ if st.button("Generate Alerts"):
 
 # Map section: Plot accumulated alerts on map
 st.header("Pakistan Alerts Map")
-if geo_df is not None and st.session_state['accumulated_alerts']:
+m = folium.Map(location=[30.3753, 69.3451], zoom_start=5)  # Center on Pakistan, always show map
+
+if st.session_state['accumulated_alerts']:
     # Combine all accumulated alerts
     combined_alerts = pd.concat(st.session_state['accumulated_alerts'].values(), ignore_index=True)
-    combined_alerts = combined_alerts.merge(geo_df[['Facility_ID', 'lat', 'long']], on='Facility_ID', how='inner')
+    combined_alerts = combined_alerts.dropna(subset=['lat', 'long'])
     
-    if combined_alerts.empty:
-        st.warning("No geo-matched alerts to plot. Check Facility_ID matches in geo data.")
-    else:
+    if not combined_alerts.empty:
         # Get unique diseases for filtering
         all_diseases = sorted(combined_alerts['Disease'].unique())
         selected_diseases = st.multiselect("Filter by Disease (select to show specific, empty for all):", options=all_diseases, default=[])
@@ -331,12 +342,7 @@ if geo_df is not None and st.session_state['accumulated_alerts']:
         else:
             map_data = combined_alerts
         
-        if map_data.empty:
-            st.warning("No alerts match the selected diseases.")
-        else:
-            # Create Folium map centered on Pakistan
-            m = folium.Map(location=[30.3753, 69.3451], zoom_start=5)  # Center on Pakistan
-            
+        if not map_data.empty:
             # Add marker cluster
             marker_cluster = MarkerCluster().add_to(m)
             
@@ -356,24 +362,21 @@ if geo_df is not None and st.session_state['accumulated_alerts']:
                     popup=popup_text,
                     icon=folium.Icon(color=color_map.get(row['Alert_Level'], 'blue'))
                 ).add_to(marker_cluster)
-            
-            # Display map
-            st_folium(m, width=700, height=500)
-else:
-    st.info("Generate alerts for provinces and upload geo data to view the map.")
+        else:
+            st.warning("No alerts match the selected diseases.")
+    else:
+        st.warning("No geo-located alerts to plot.")
+
+# Display map
+st_folium(m, width=700, height=500)
 
 # Instructions (updated)
 st.sidebar.title("Instructions")
 st.sidebar.write("1. Select province.")
 st.sidebar.write("2. Ensure the corresponding threshold file is in the same folder as app.py (e.g., AJK.csv for AJK, seasonal_thresholds_kp.xlsx for Khyber Pakhtunkhwa).")
-st.sidebar.write("3. Upload facilities geo data CSV (once, with Facility_ID, lat, long).")
-st.sidebar.write("4. Upload weekly data (CSV/Excel).")
-st.sidebar.write("5. Adjust filters and click 'Generate Alerts'.")
-st.sidebar.write("6. View table, download CSV, and see accumulated alerts on the map.")
-st.sidebar.write("7. Filter map by disease to identify clusters.")
+st.sidebar.write("3. Upload weekly data (CSV/Excel).")
+st.sidebar.write("4. Adjust filters and click 'Generate Alerts'.")
+st.sidebar.write("5. View table, download CSV, and see accumulated alerts on the map.")
+st.sidebar.write("6. Filter map by disease to identify clusters.")
+st.sidebar.write("Note: Geocoding may take time and some addresses might not resolve accurately.")
 st.sidebar.write("Developer: Asad khan")
-
-# Additional suggestions:
-# I added a few extras like a button to clear accumulated alerts, color-coding by alert level, popups with details, and marker clustering for better visualization of clusters.
-# Other ideas: You could add a heatmap layer for density (using folium.plugins.HeatMap), or aggregate to district level if facility points are too many.
-# If geo data is unavailable, we could parse district from Facility_ID and use average district coordinates from a predefined dict.
