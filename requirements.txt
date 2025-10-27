@@ -6,3 +6,4 @@ twilio
 folium
 streamlit-folium
 Nominatim
+geopy
