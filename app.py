@@ -242,6 +242,9 @@ if st.button("Generate Alerts"):
         long_new['Cases'] = long_new['Cases'].astype(float)
         st.write("Melted data shape:", long_new.shape)
         
+        st.write("Sample melted data:")
+        st.dataframe(long_new.head())
+        
         # Year-round override (updated to exact names from historical script and columns, no trailing '/')
         year_round_diseases = [
             'Acute Flaccid Paralysis (New Cases)', 'Botulism (New Cases)', 'Gonorrhea (New Cases)',
@@ -257,14 +260,27 @@ if st.button("Generate Alerts"):
             st.stop()
         filtered_thresholds = threshold_df[(threshold_df['Season'] == current_season) | (threshold_df['Season'] == 'Year-Round')]
         
-        # Normalize for case-insensitive merge
-        long_new['Facility_ID_lower'] = long_new['Facility_ID'].str.lower().str.strip()
-        long_new['Disease_lower'] = long_new['Disease'].str.lower().str.strip()
-        long_new['Season_lower'] = long_new['Season'].str.lower().str.strip()
+        st.write("Sample thresholds:")
+        st.dataframe(filtered_thresholds.head())
         
-        filtered_thresholds['Facility_ID_lower'] = filtered_thresholds['Facility_ID'].str.lower().str.strip()
-        filtered_thresholds['Disease_lower'] = filtered_thresholds['Disease'].str.lower().str.strip()
-        filtered_thresholds['Season_lower'] = filtered_thresholds['Season'].str.lower().str.strip()
+        # Normalize for case-insensitive merge
+        long_new['Facility_ID_lower'] = long_new['Facility_ID'].str.lower().str.strip().str.replace(r'\s+', ' ', regex=True)
+        long_new['Disease_lower'] = long_new['Disease'].str.lower().str.strip().str.replace(r'\s+', ' ', regex=True)
+        long_new['Season_lower'] = long_new['Season'].str.lower().str.strip().str.replace(r'\s+', ' ', regex=True)
+        
+        filtered_thresholds['Facility_ID_lower'] = filtered_thresholds['Facility_ID'].str.lower().str.strip().str.replace(r'\s+', ' ', regex=True)
+        filtered_thresholds['Disease_lower'] = filtered_thresholds['Disease'].str.lower().str.strip().str.replace(r'\s+', ' ', regex=True)
+        filtered_thresholds['Season_lower'] = filtered_thresholds['Season'].str.lower().str.strip().str.replace(r'\s+', ' ', regex=True)
+        
+        # Debugging: unique values
+        st.write("Unique diseases in new data (lower):", sorted(long_new['Disease_lower'].unique()))
+        st.write("Unique diseases in thresholds (lower):", sorted(filtered_thresholds['Disease_lower'].unique()))
+        
+        st.write("Seasons in new (lower):", long_new['Season_lower'].unique())
+        st.write("Seasons in thresh (lower):", filtered_thresholds['Season_lower'].unique())
+        
+        st.write("Sample Facility_ID in new (lower):", long_new['Facility_ID_lower'].sample(min(5, len(long_new))).values)
+        st.write("Sample Facility_ID in thresh (lower):", filtered_thresholds['Facility_ID_lower'].sample(min(5, len(filtered_thresholds))).values)
         
         # Merge on normalized columns
         alerts = long_new.merge(
