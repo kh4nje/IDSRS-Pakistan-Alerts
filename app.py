@@ -257,7 +257,30 @@ if st.button("Generate Alerts"):
             st.stop()
         filtered_thresholds = threshold_df[(threshold_df['Season'] == current_season) | (threshold_df['Season'] == 'Year-Round')]
         
-        alerts = long_new.merge(filtered_thresholds[['Facility_ID', 'Disease', 'Season', 'Threshold_95', 'Threshold_99', 'Mean', 'SD']], on=['Facility_ID', 'Disease', 'Season'], how='left')
+        # Normalize for case-insensitive merge
+        long_new['Facility_ID_lower'] = long_new['Facility_ID'].str.lower().str.strip()
+        long_new['Disease_lower'] = long_new['Disease'].str.lower().str.strip()
+        long_new['Season_lower'] = long_new['Season'].str.lower().str.strip()
+        
+        filtered_thresholds['Facility_ID_lower'] = filtered_thresholds['Facility_ID'].str.lower().str.strip()
+        filtered_thresholds['Disease_lower'] = filtered_thresholds['Disease'].str.lower().str.strip()
+        filtered_thresholds['Season_lower'] = filtered_thresholds['Season'].str.lower().str.strip()
+        
+        # Merge on normalized columns
+        alerts = long_new.merge(
+            filtered_thresholds[['Facility_ID_lower', 'Disease_lower', 'Season_lower', 'Threshold_95', 'Threshold_99', 'Mean', 'SD', 'Facility_ID', 'Disease', 'Season']],
+            on=['Facility_ID_lower', 'Disease_lower', 'Season_lower'],
+            how='left',
+            suffixes=('_new', '_thresh')
+        )
+        
+        # Use original columns from threshold if matched, else from new
+        alerts['Facility_ID'] = alerts['Facility_ID_thresh'].combine_first(alerts['Facility_ID_new'])
+        alerts['Disease'] = alerts['Disease_thresh'].combine_first(alerts['Disease_new'])
+        alerts['Season'] = alerts['Season_thresh'].combine_first(alerts['Season_new'])
+        
+        # Drop temporary and duplicate columns
+        alerts = alerts.drop(columns=['Facility_ID_lower', 'Disease_lower', 'Season_lower', 'Facility_ID_new', 'Disease_new', 'Season_new', 'Facility_ID_thresh', 'Disease_thresh', 'Season_thresh'])
         
         # Validate merge (warn if many unmatched)
         unmatched_pct = alerts['Threshold_95'].isna().mean() * 100
